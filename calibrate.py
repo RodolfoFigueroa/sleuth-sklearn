@@ -6,8 +6,8 @@ import pandas as pd
 import xarray as xr
 
 from sklearn.model_selection import GridSearchCV
-from sleuth_estimator.estimator import SLEUTH
-from sleuth_estimator.utils import generate_grid
+from sleuth_sklearn.estimator import SLEUTH
+from sleuth_sklearn.utils import generate_grid
 
 def get_new_params(param_grid, df):
     top = df.sort_values("rank_test_score").head(3)

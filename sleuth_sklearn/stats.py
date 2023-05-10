@@ -1,7 +1,7 @@
 import numpy as np
 
 from dataclasses import dataclass, fields, field
-from sleuth_estimator.logconf import logger
+from sleuth_sklearn.logconf import logger
 from pathlib import Path
 from scipy.ndimage import convolve, label, center_of_mass
 

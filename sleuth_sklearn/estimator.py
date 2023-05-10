@@ -1,11 +1,11 @@
 import numpy as np
-import sleuth_estimator.spread as sp
-import sleuth_estimator.stats as st
+import sleuth_sklearn.spread as sp
+import sleuth_sklearn.stats as st
 
 from scipy.stats import pearsonr
 from sklearn.base import BaseEstimator
 from sklearn.utils import check_random_state
-from sleuth_estimator.stats import Record, StatsVal
+from sleuth_sklearn.stats import Record, StatsVal
 
 class SLEUTH(BaseEstimator):
     def __init__(

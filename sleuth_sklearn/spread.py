@@ -1,7 +1,7 @@
 import numpy as np
 from functools import reduce
-from sleuth_estimator.stats import compute_stats
-from sleuth_estimator.stats import Record
+from sleuth_sklearn.stats import compute_stats
+from sleuth_sklearn.stats import Record
 
 
 def spread(
