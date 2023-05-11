@@ -103,7 +103,7 @@ def compute_stats(urban, slope):
     ymean, xmean = center_of_mass(urban)
 
     # radius of circle of area equal to urban area
-    rad = np.sqrt(area/np.pi)
+    rad = np.sqrt(area / np.pi)
 
     # Returns a dict of statistics
     # Seems pop and area are the same in orginal SLEUTH code
@@ -116,7 +116,7 @@ def compute_stats(urban, slope):
         avg_slope,
         rad,
         mean_cluster_size,
-        percent_urban
+        percent_urban,
     )
 
 
@@ -125,15 +125,13 @@ def count_edges(urban):
     # Orignal SLEUTH code searches in the Von Neuman
     # neighborhood for empty cells. This is akin to perform
     # a convolution with the Laplacian kernel
-    kernel = np.array([[0, 1, 0],
-                       [1, -4, 1],
-                       [0, 1, 0]])
+    kernel = np.array([[0, 1, 0], [1, -4, 1], [0, 1, 0]])
 
     # Scipy's ndimage.convolve is faster than signal.convolve
     # for 2D images
     # signal.convolve is more general and handles ndim arrays
     # TODO: splicitly pass output array to save memory
-    conv = convolve(urban, kernel, mode='constant', output=int)
+    conv = convolve(urban, kernel, mode="constant", output=int)
 
     edges = (conv < 0).sum()
 

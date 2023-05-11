@@ -1,6 +1,7 @@
 import numpy as np
 import xarray as xr
 
+
 def generate_grid(p_min, p_max, n_p=5):
     assert p_min <= p_max
     delta = p_max - p_min
@@ -8,21 +9,17 @@ def generate_grid(p_min, p_max, n_p=5):
         return [p_min]
     if n_p > delta + 1:
         n_p = delta + 1
-    step = int(delta/(n_p - 1))
-    last = step*(n_p - 1)
+    step = int(delta / (n_p - 1))
+    last = step * (n_p - 1)
     deltas = np.arange(0, last + 1, step, dtype=int)
     remainder = delta - last
-    adjust = [0]*(n_p - remainder) + list(range(1, remainder + 1))
+    adjust = [0] * (n_p - remainder) + list(range(1, remainder + 1))
     deltas += adjust
     return deltas + p_min
 
 
 def open_dataset(path):
-    ds = xr.open_dataset(
-        path,
-        cache = False,
-        mask_and_scale = False
-    )
+    ds = xr.open_dataset(path, cache=False, mask_and_scale=False)
     ds.load()
     ds.close()
     return ds

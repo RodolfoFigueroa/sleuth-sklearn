@@ -5,24 +5,24 @@ from sleuth_sklearn.stats import Record
 
 
 def spread(
-        grd_Z,
-        grd_slope,
-        grd_excluded,
-        grd_roads,
-        grd_roads_dist,
-        grd_road_i,
-        grd_road_j,
-        coef_diffusion,
-        coef_breed,
-        coef_spread,
-        coef_slope,
-        coef_road,
-        crit_slope,
-        prng,
-        # urb_attempt,
-        sweights,
+    grd_Z,
+    grd_slope,
+    grd_excluded,
+    grd_roads,
+    grd_roads_dist,
+    grd_road_i,
+    grd_road_j,
+    coef_diffusion,
+    coef_breed,
+    coef_spread,
+    coef_slope,
+    coef_road,
+    crit_slope,
+    prng,
+    # urb_attempt,
+    sweights,
 ):
-    """ Simulate a year's urban growth.
+    """Simulate a year's urban growth.
 
     This function executes urban growth phases for a single step (year).
     Takes urbanization in previous years from the Z grid and temporary
@@ -140,7 +140,7 @@ def spread(
     # in the delta grid
     # excld value is the 100*probability of rejecting urbanization
     # TODO: implement as boolean operation without indexing
-    excld_mask = prng.random(size=grd_delta.shape)*100 < grd_excluded
+    excld_mask = prng.random(size=grd_delta.shape) * 100 < grd_excluded
     grd_delta[excld_mask] = 0
 
     # Urbanize in Z array for accumulated urbanization.
@@ -154,14 +154,9 @@ def spread(
     return sng, sdc, og, rt, num_growth_pix
 
 
-def phase_spontaneous(
-        grd_delta,
-        p_diff,
-        prng,
-        sweights
-):
+def phase_spontaneous(grd_delta, p_diff, prng, sweights):
     # Adjust probability with slope rejection
-    p_diff = sweights*p_diff
+    p_diff = sweights * p_diff
 
     # Apply urbanization test to all pixels
     mask = prng.random(size=grd_delta.shape) < p_diff
@@ -174,18 +169,17 @@ def phase_spontaneous(
 
 
 def phase_breed(
-        grd_delta,
-        p_breed,
-        prng,
-        sweights,
+    grd_delta,
+    p_breed,
+    prng,
+    sweights,
 ):
-
     n_nbrs = count_neighbors(grd_delta)
 
     # Adjust probability with slope rejection
-    p_breed = sweights*p_breed
+    p_breed = sweights * p_breed
     # The probability of urbanization is then (see notes)
-    p_urb = (-1)**(n_nbrs + 1)*(p_breed / 4.0 - 1)**n_nbrs + 1
+    p_urb = (-1) ** (n_nbrs + 1) * (p_breed / 4.0 - 1) ** n_nbrs + 1
 
     # Apply random test
     mask = prng.random(size=grd_delta.shape) < p_urb
@@ -198,19 +192,19 @@ def phase_breed(
 
 
 def phase1n3_new(
-        grd_Z,
-        grd_delta,
-        # grd_slope,
-        # grd_excluded,
-        coef_diffusion,
-        coef_breed,
-        # coef_slope,
-        # crit_slope,
-        prng,
-        # urb_attempt,
-        sweights,
+    grd_Z,
+    grd_delta,
+    # grd_slope,
+    # grd_excluded,
+    coef_diffusion,
+    coef_breed,
+    # coef_slope,
+    # crit_slope,
+    prng,
+    # urb_attempt,
+    sweights,
 ):
-    """ Spontaneus growth and possible new urban centers.
+    """Spontaneus growth and possible new urban centers.
 
     This function implements the first two stages of growth, the appearance
     of new urban cells at random anywhere on the grid, and the possible
@@ -256,7 +250,7 @@ def phase1n3_new(
     diag = np.sqrt(nrows**2 + ncols**2)
     p_diff = 0.005 * coef_diffusion * diag / (nrows * ncols)
     # Adjust probability with slope rejection
-    p_diff = sweights*p_diff
+    p_diff = sweights * p_diff
 
     # Apply urbanization test to all pixels
     # TODO: ignore borders
@@ -281,11 +275,11 @@ def phase1n3_new(
 
     # Apply urbanization test
     # Pixels that past the test attempt urbanization
-    p_breed = (coef_breed / 100.0)
+    p_breed = coef_breed / 100.0
     # Adjust probability with slope rejection
-    p_breed = sweights*p_breed
+    p_breed = sweights * p_breed
     # The probability of urbanization is then (see notes)
-    p_urb = (-1)**(n_nbrs + 1)*(p_breed / 4.0 - 1)**n_nbrs + 1
+    p_urb = (-1) ** (n_nbrs + 1) * (p_breed / 4.0 - 1) ** n_nbrs + 1
 
     # Apply random test
     mask = prng.random(size=grd_delta.shape) < p_urb
@@ -298,18 +292,18 @@ def phase1n3_new(
 
 
 def phase4_new(
-        grd_Z,
-        grd_delta,
-        # grd_slope,
-        # grd_excluded,
-        coef_spread,
-        # coef_slope,
-        # crit_slope,
-        prng,
-        # urb_attempt,
-        sweights,
+    grd_Z,
+    grd_delta,
+    # grd_slope,
+    # grd_excluded,
+    coef_spread,
+    # coef_slope,
+    # crit_slope,
+    prng,
+    # urb_attempt,
+    sweights,
 ):
-    """ Edge growth of existing urban clusters composed of 3 or more pixels.
+    """Edge growth of existing urban clusters composed of 3 or more pixels.
 
     This function executes edge growth. Each empty pixel with 3 or more
     urbanized neighbors has a probability of urbanize.
@@ -391,9 +385,9 @@ def phase4_new(
     # Pixels that past the test attempt urbanization
     p_sprd = coef_spread / 100.0
     # Adjust probability with slope rejection
-    p_sprd = sweights*p_sprd
+    p_sprd = sweights * p_sprd
     # The probability of urbanization is then (see notes)
-    p_urb = (-1)**(n_nbrs + 1)*(p_sprd / 8.0 - 1)**n_nbrs + 1
+    p_urb = (-1) ** (n_nbrs + 1) * (p_sprd / 8.0 - 1) ** n_nbrs + 1
 
     # Apply random test
     mask = prng.random(size=grd_delta.shape) < p_urb
@@ -409,23 +403,23 @@ def phase4_new(
 
 
 def phase5(
-        grd_Z,
-        grd_delta,
-        grd_slope,
-        grd_excluded,
-        grd_roads,
-        grd_road_dist,
-        grd_road_i,
-        grd_road_j,
-        coef_road,
-        coef_diffusion,
-        coef_breed,
-        coef_slope,
-        crit_slope,
-        prng,
-        # urb_attempt
+    grd_Z,
+    grd_delta,
+    grd_slope,
+    grd_excluded,
+    grd_roads,
+    grd_road_dist,
+    grd_road_i,
+    grd_road_j,
+    coef_road,
+    coef_diffusion,
+    coef_breed,
+    coef_slope,
+    crit_slope,
+    prng,
+    # urb_attempt
 ):
-    """ Road influenced growth.
+    """Road influenced growth.
 
     This function executes growth influenced by the presence of the
     road network. It looks for urban pixels near a road and attempts to
@@ -484,8 +478,7 @@ def phase5(
     # this is the chebyshev distance and is precomputed in grid
     # maxed at ~ 1/32 image perimeter
     nrows, ncols = grd_delta.shape
-    max_dist = int(coef_road / 100
-                   * (nrows + ncols) / 16.0)
+    max_dist = int(coef_road / 100 * (nrows + ncols) / 16.0)
     # number of neighbors up to distance max_dist
     # useless in our code, but original SLEUTH uses this to
     # spiral search the neighborhood of a pixel
@@ -515,14 +508,9 @@ def phase5(
     # Coordinates of new growth
     coords = np.array(np.where(grd_delta > 0)).T
 
-
     # Select n=breed growth candidates
     if len(coords) > 0:
-        coords = prng.choice(
-            coords,
-            size=int(coef_breed) + 1,
-            replace=True
-        )
+        coords = prng.choice(coords, size=int(coef_breed) + 1, replace=True)
 
     # Search for nearest road, and select only if road is close enough
     dists = grd_road_dist[coords[:, 0], coords[:, 1]]
@@ -536,8 +524,14 @@ def phase5(
     # attempt urbanization close to it?
     nlist = np.array(
         (
-            (-1, -1), (0, -1), (+1, -1), (+1, 0),
-            (+1, +1), (0, +1), (-1, +1), (-1, 0),
+            (-1, -1),
+            (0, -1),
+            (+1, -1),
+            (+1, 0),
+            (+1, +1),
+            (0, +1),
+            (-1, +1),
+            (-1, 0),
             # (0, 0)  # Allows to stay in the same spot, useful if road has no neighbors
         )
     )
@@ -608,17 +602,17 @@ def phase5(
 
 
 def urbanizable(
-        coords,
-        grd_Z,
-        grd_delta,
-        grd_slope,
-        grd_excluded,
-        coef_slope,
-        crit_slope,
-        prng,
-        # urb_attempt
+    coords,
+    grd_Z,
+    grd_delta,
+    grd_slope,
+    grd_excluded,
+    coef_slope,
+    crit_slope,
+    prng,
+    # urb_attempt
 ):
-    """ Determine wether pixels are subject to urbanization.
+    """Determine wether pixels are subject to urbanization.
 
     Pixels subject to urbanization are not already urbanized pixels that
     pass the tests of slope and the exclution region.
@@ -663,15 +657,15 @@ def urbanizable(
     # excld = grd_excluded[ic, jc]
 
     # Check if not already urbanized in original and delta grid
-    z_mask = (z == 0)
-    delta_mask = (delta == 0)
+    z_mask = z == 0
+    delta_mask = delta == 0
     # urb_attempt.z_failure += (~z_mask).sum()
     # urb_attempt.delta_failure += (~delta_mask).sum()
 
     # Apply slope restrictions
     # sweights give the probability of rejecting urbanization
     sweights = slope_weight(slope, coef_slope, crit_slope)
-    slp_mask = (prng.random(size=len(sweights)) >= sweights)
+    slp_mask = prng.random(size=len(sweights)) >= sweights
     # urb_attempt.slope_failure += (~slp_mask).sum()
 
     # Apply excluded restrictions, excluded values >= 100 are
@@ -687,7 +681,7 @@ def urbanizable(
             delta_mask,
             slp_mask,
             # excld_mask
-        ]
+        ],
     )
     # urb_attempt.successes += mask.sum()
 
@@ -695,16 +689,16 @@ def urbanizable(
 
 
 def urbanizable_nghbrs(
-        i,
-        j,
-        grd_Z,
-        grd_delta,
-        grd_slope,
-        grd_excluded,
-        coef_slope,
-        crit_slope,
-        prng,
-        # urb_attempt
+    i,
+    j,
+    grd_Z,
+    grd_delta,
+    grd_slope,
+    grd_excluded,
+    coef_slope,
+    crit_slope,
+    prng,
+    # urb_attempt
 ):
     """Attempt to urbanize the neiggborhood of (i, j).
 
@@ -748,8 +742,7 @@ def urbanizable_nghbrs(
     """
 
     nlist = (i, j) + np.array(
-        ((-1, -1), (0, -1), (+1, -1), (+1, 0),
-         (+1, +1), (0, +1), (-1, +1), (-1, 0))
+        ((-1, -1), (0, -1), (+1, -1), (+1, 0), (+1, +1), (0, +1), (-1, +1), (-1, 0))
     )
     # TODO: instead of shyffling in place, generate randon indices.
     prng.shuffle(nlist)
@@ -816,21 +809,21 @@ def slope_weight(slope, slp_res, critical_slp):
 
 
 def coef_self_modification(
-        coef_diffusion,
-        coef_breed,
-        coef_spread,
-        coef_slope,
-        coef_road,
-        boom,
-        bust,
-        sens_slope,
-        sens_road,
-        growth_rate,
-        percent_urban,
-        critical_high,
-        critical_low
+    coef_diffusion,
+    coef_breed,
+    coef_spread,
+    coef_slope,
+    coef_road,
+    boom,
+    bust,
+    sens_slope,
+    sens_road,
+    growth_rate,
+    percent_urban,
+    critical_high,
+    critical_low,
 ):
-    """ Applies self modification rules to growth coefficients.
+    """Applies self modification rules to growth coefficients.
 
     When growth is extreme during a given year, coefficients are modified to
     further mantain the growth trend.
@@ -945,7 +938,7 @@ def coef_self_modification(
 #         print(i, arr.shape)
 #         print(type(arr))
 #         print("===")
-    
+
 #     s = sum(arrs)
 #     sbak = Z[:-2, :-2] + Z[:-2, 1:-1] + Z[:-2, 2:]
 #     print(s.shape, sbak.shape, N[1:-1, 1:-1].shape)
@@ -953,9 +946,17 @@ def coef_self_modification(
 
 #     return N
 
+
 def count_neighbors(Z):
     N = np.zeros(Z.shape, dtype=np.int8)
-    N[1:-1, 1:-1] += (Z[:-2, :-2] + Z[:-2, 1:-1] + Z[:-2, 2:] +
-                      Z[1:-1, :-2] + Z[1:-1, 2:] +
-                      Z[2:, :-2] + Z[2:, 1:-1] + Z[2:, 2:])
+    N[1:-1, 1:-1] += (
+        Z[:-2, :-2]
+        + Z[:-2, 1:-1]
+        + Z[:-2, 2:]
+        + Z[1:-1, :-2]
+        + Z[1:-1, 2:]
+        + Z[2:, :-2]
+        + Z[2:, 1:-1]
+        + Z[2:, 2:]
+    )
     return N

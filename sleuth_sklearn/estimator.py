@@ -7,24 +7,25 @@ from sklearn.base import BaseEstimator
 from sklearn.utils import check_random_state
 from sleuth_sklearn.stats import Record, StatsVal
 
+
 class SLEUTH(BaseEstimator):
     def __init__(
         self,
         *,
-        total_mc = 10,
-        grid_slope = np.empty(0),
-        grid_excluded = np.empty(0),
-        grid_roads = np.empty(0),
-        grid_roads_dist = np.empty(0),
-        grid_roads_i = np.empty(0),
-        grid_roads_j = np.empty(0),
-        coef_diffusion = 0,
-        coef_breed = 0,
-        coef_spread = 0,
-        coef_slope = 0,
-        coef_road = 0,
-        crit_slope = 0,
-        random_state = None
+        total_mc=10,
+        grid_slope=np.empty(0),
+        grid_excluded=np.empty(0),
+        grid_roads=np.empty(0),
+        grid_roads_dist=np.empty(0),
+        grid_roads_i=np.empty(0),
+        grid_roads_j=np.empty(0),
+        coef_diffusion=0,
+        coef_breed=0,
+        coef_spread=0,
+        coef_slope=0,
+        coef_road=0,
+        crit_slope=0,
+        random_state=None
     ):
         self.coef_diffusion = coef_diffusion
         self.coef_breed = coef_breed
@@ -44,7 +45,6 @@ class SLEUTH(BaseEstimator):
         self.total_mc = total_mc
         self.random_state = random_state
 
-
     def fit(self, X, y):
         X = np.array(X)
         y = np.array(y)
@@ -57,17 +57,17 @@ class SLEUTH(BaseEstimator):
         nyears = y[-1] - y[0] + 1
         _, nrows, ncols = X.shape
         grid_MC = np.zeros((nyears, nrows, ncols))
-        
+
         self.records_ = []
         for year in range(y[0], y[-1] + 1):
             record = Record(
-                year = year,
-                is_calibration = year in y,
-                diffusion = self.coef_diffusion,
-                breed = self.coef_breed,
-                spread = self.coef_spread,
-                slope = self.coef_slope,
-                road = self.coef_road,
+                year=year,
+                is_calibration=year in y,
+                diffusion=self.coef_diffusion,
+                breed=self.coef_breed,
+                spread=self.coef_spread,
+                slope=self.coef_slope,
+                road=self.coef_road,
             )
             self.records_.append(record)
 
@@ -83,7 +83,7 @@ class SLEUTH(BaseEstimator):
                 stats_val.slope,
                 stats_val.rad,
                 stats_val.mean_cluster_size,
-                stats_val.percent_urban
+                stats_val.percent_urban,
             ) = st.compute_stats(X[i], self.grid_slope)
 
         for i in range(self.total_mc):
@@ -91,12 +91,11 @@ class SLEUTH(BaseEstimator):
 
         for record in self.records_:
             record.compute_std()
-        
+
         return self
 
-
     def predict(self, X, nyears):
-        """ Performs a single run consisting of several montecarlo interations.
+        """Performs a single run consisting of several montecarlo interations.
 
         Returns
         -------
@@ -115,7 +114,6 @@ class SLEUTH(BaseEstimator):
         grid_MC /= self.total_mc
         return grid_MC
 
-
     def score(self, X, y):
         # Calculate calibration statistics
         # The modified coefficients are extracted
@@ -124,17 +122,18 @@ class SLEUTH(BaseEstimator):
         # The optimal SLEUTH metric is the product of:
         # compare, pop, edges, clusters, slope, x_mean, and y_mean
         # Extract mean records for urban years
-        sim_means = [record.average for record in self.records_ if record.is_calibration]
+        sim_means = [
+            record.average for record in self.records_ if record.is_calibration
+        ]
         sim_means = sim_means[1:]
 
         # Compare: ratio of final urbanizations at last control years
         final_pop_sim = sim_means[-1].pop
         final_pop_urb = self.calibration_stats_[-1].pop
-        compare = (min(final_pop_sim, final_pop_urb)
-                / max(final_pop_sim, final_pop_urb))
+        compare = min(final_pop_sim, final_pop_urb) / max(final_pop_sim, final_pop_urb)
 
         # Find regression coefficients, ignore seed year
-        osm_metrics_names = ['pop', 'edges', 'clusters', 'slope', 'xmean', 'ymean']
+        osm_metrics_names = ["pop", "edges", "clusters", "slope", "xmean", "ymean"]
         osm_metrics = []
         for metric in osm_metrics_names:
             # simulation skips seed year
@@ -148,7 +147,6 @@ class SLEUTH(BaseEstimator):
         osm = np.prod(osm_metrics) * compare
         return osm
 
-
     def grow(self, grid_MC, seed_grid, write_records=False):
         nyears = grid_MC.shape[0]
 
@@ -159,7 +157,9 @@ class SLEUTH(BaseEstimator):
 
         # Precalculate/reset slope weighs
         # This can change due to self-modification during growth.
-        sweights = 1 - sp.slope_weight(self.grid_slope, self.coef_slope, self.crit_slope)
+        sweights = 1 - sp.slope_weight(
+            self.grid_slope, self.coef_slope, self.crit_slope
+        )
 
         for i in range(nyears):
             # Apply CA rules for current year
@@ -209,7 +209,7 @@ class SLEUTH(BaseEstimator):
                     record.this_year.slope,
                     record.this_year.rad,
                     record.this_year.mean_cluster_size,
-                    record.this_year.percent_urban
+                    record.this_year.percent_urban,
                 ) = sp.compute_stats(grd_Z, self.grid_slope)
 
                 # Growth
@@ -224,8 +224,5 @@ class SLEUTH(BaseEstimator):
             # TODO: avoid indexing making sure Z grid is at most 1.
             grid_MC[i][grd_Z > 0] += 1
 
-
     def _more_tags(self):
-        return {
-            "X_types": ["3darray"]
-        }
+        return {"X_types": ["3darray"]}
