@@ -3,40 +3,10 @@ import os
 
 import numpy as np
 import pandas as pd
-import xarray as xr
 
 from sklearn.model_selection import GridSearchCV
 from sleuth_sklearn.estimator import SLEUTH
-from sleuth_sklearn.utils import generate_grid
-
-def get_new_params(param_grid, df):
-    top = df.sort_values("rank_test_score").head(3)
-    param_grid_new = {}
-    for name in ["diffusion", "breed", "spread", "slope", "road"]:
-        col = top[f"param_coef_{name}"]
-
-        c_min = col.min()
-        c_max = col.max()
-        if c_min == c_max:
-            grid = param_grid[f"coef_{name}"]
-            grid = np.array(grid)
-            idx = np.argwhere(grid == c_min).item()
-            c_min = grid[max(0, idx - 1)]
-            c_max = grid[min(idx + 1, len(grid) - 1)]
-
-        param_grid_new[f"coef_{name}"] = generate_grid(c_min, c_max)
-    return param_grid_new
-
-
-def open_dataset(path):
-    ds = xr.open_dataset(
-        path,
-        cache = False,
-        mask_and_scale = False
-    )
-    ds.load()
-    ds.close()
-    return ds
+from sleuth_sklearn.utils import open_dataset, get_new_params
 
 
 def main():
