@@ -104,6 +104,8 @@ class SLEUTH(BaseEstimator):
         """
         # Create monte carlo grid to accumulate probability of urbanization
         # one grid per simulated year
+        self.random_state_ = np.random.Generator(np.random.SFC64(self.random_state))
+
         nrows, ncols = X.shape
         grid_MC = np.zeros((nyears, nrows, ncols))
 
