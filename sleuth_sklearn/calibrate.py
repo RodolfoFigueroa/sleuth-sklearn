@@ -30,7 +30,7 @@ def get_new_params(param_grid, df):
 
 def open_dataset(path):
     ds = xr.open_dataset(
-        args.file,
+        path,
         cache = False,
         mask_and_scale = False
     )
@@ -39,7 +39,7 @@ def open_dataset(path):
     return ds
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-f",
@@ -51,7 +51,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-s",
         "--stage",
-        help = "Initial stage. If greater than one, the corresponding stage files must exist.",
+        help = "Initial stage. If greater than one, the previous stage files must exist.",
         type = int,
         choices = [1, 2, 3],
         required = False,
