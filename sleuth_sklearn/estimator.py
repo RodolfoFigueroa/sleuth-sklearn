@@ -111,7 +111,7 @@ class SLEUTH(BaseEstimator):
 
         # Perform simulation from start to end year
         for i in range(self.total_mc):
-            self.grow(grid_MC, X, self.random_state_, write_records=False)
+            self.grow(grid_MC, X, write_records=False)
 
         grid_MC /= self.total_mc
         return grid_MC
