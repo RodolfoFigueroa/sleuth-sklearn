@@ -95,13 +95,6 @@ class SLEUTH(BaseEstimator):
         return self
 
     def predict(self, X, nyears):
-        """Performs a single run consisting of several montecarlo interations.
-
-        Returns
-        -------
-        optimal: float
-            Optimal SLEUTH parameter.
-        """
         # Create monte carlo grid to accumulate probability of urbanization
         # one grid per simulated year
         self.random_state_ = np.random.Generator(np.random.SFC64(self.random_state))
