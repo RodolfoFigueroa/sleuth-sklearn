@@ -3,11 +3,11 @@ import os
 
 import numpy as np
 import pandas as pd
+import sleuth_sklearn.utils as su
 
 from pathlib import Path
 from sklearn.model_selection import GridSearchCV
 from sleuth_sklearn.estimator import SLEUTH
-from sleuth_sklearn.utils import open_dataset, get_new_params
 
 
 def main():
@@ -70,7 +70,7 @@ def main():
     args = parser.parse_args()
 
     stage_dir = Path(args.directory)
-    ds = open_dataset(args.filename)
+    ds = su.open_dataset(args.filename)
 
     wanted_years = [year for year in ds.year.values if year >= 2000]
     urban_grids = ds.sel(year=wanted_years)["urban"].values
@@ -95,7 +95,7 @@ def main():
 
         if args.stage == 2:
             stages = [2, 3]
-            param_grid = get_new_params(param_grid_base, df)
+            param_grid = su.get_new_params(param_grid_base, df)
 
     for stage in stages:
         print(param_grid)
@@ -124,4 +124,15 @@ def main():
         df = pd.DataFrame(res.cv_results_)
         df.to_csv(stage_dir / f"./stage_{stage}.csv", index=False)
 
-        param_grid = get_new_params(param_grid, df)
+        top = df.sort_values("rank_test_score").head(3)
+
+        new_param_grid = {}
+        for field in ["diffusion", "breed", "spread", "slope", "road"]:
+            col = top[f"param_coef_{field}"]
+            c_min = col.min()
+            c_max = col.max()
+
+            key = f"coef_{field}"
+            new_param_grid[key] = su.get_new_range(param_grid[key], c_min, c_max)
+
+        param_grid = new_param_grid
