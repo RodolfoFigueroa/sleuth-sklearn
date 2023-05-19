@@ -5,10 +5,155 @@ import sleuth_sklearn.spread as sp
 import sleuth_sklearn.stats as st
 import sleuth_sklearn.utils as su
 
-from scipy.stats import pearsonr
+from numba import jit, njit, prange
 from sklearn.base import BaseEstimator
-from sklearn.utils import check_random_state
-from sleuth_sklearn.stats import Record, StatsVal
+from sleuth_sklearn.indices import I, J
+
+
+@njit
+def evaluate_records(
+    records,
+    *,
+    years,
+    calibration_stats,
+):
+    # Calculate calibration statistics
+    # The modified coefficients are extracted
+    # from the last oberseved year average record.
+
+    # The optimal SLEUTH metric is the product of:
+    # compare, pop, edges, clusters, slope, x_mean, and y_mean
+    # Extract mean records for urban years
+    # sim_means = [record[I.AVERAGE] for record, year in zip(records, sim_years) if year in self.years_]
+    sim_idx = np.array([year in years for year in range(years[0], years[-1] + 1)])
+    sim_means = records[sim_idx, I.AVERAGE, :]
+
+    assert sim_means.shape == calibration_stats.shape
+
+    # Compare: ratio of final urbanizations at last control years
+    final_pop_sim = sim_means[-1][J.POP]
+    final_pop_urb = calibration_stats[-1][J.POP]
+    compare = min(final_pop_sim, final_pop_urb) / max(final_pop_sim, final_pop_urb)
+
+    # Find regression coefficients, ignore seed year
+    # osm_metrics_names = ["pop", "edges", "clusters", "slope", "xmean", "ymean"]
+    osm_metrics_idx = [J.POP, J.EDGES, J.CLUSTERS, J.SLOPE, J.XMEAN, J.YMEAN]
+    osm_metrics = []
+    for idx in osm_metrics_idx:
+        # simulation skips seed year
+        sim_vals = [s[idx] for s in sim_means[1:]]
+        urb_vals = [s[idx] for s in calibration_stats[1:]]
+        # r, _ = pearsonr(sim_vals, urb_vals)
+        cor_mat = np.corrcoef(sim_vals, urb_vals)
+        r = cor_mat[0, 1]
+        r = r**2
+        osm_metrics.append(r)
+    osm_metrics = np.array(osm_metrics)
+
+    # Optimal metric
+    osm = np.prod(osm_metrics) * compare
+    return osm
+
+
+@njit(parallel=True)
+def fill_montecarlo_grid(
+    X0,
+    *,
+    nyears,
+    nrows,
+    ncols,
+    n_iters,
+    grid_slope,
+    grid_excluded,
+    grid_roads,
+    grid_roads_dist,
+    grid_roads_i,
+    grid_roads_j,
+    coef_diffusion,
+    coef_breed,
+    coef_spread,
+    coef_slope,
+    coef_road,
+    crit_slope,
+    prng,
+):
+    grid_MC = np.zeros((nyears, nrows, ncols), dtype=np.uintc)
+    records = np.zeros((nyears, 3, 20), dtype=np.float_)
+    for i in prange(n_iters):
+        grid_MC += sp.grow(
+            X0,
+            nyears=nyears,
+            grid_slope=grid_slope,
+            grid_excluded=grid_excluded,
+            grid_roads=grid_roads,
+            grid_roads_dist=grid_roads_dist,
+            grid_roads_i=grid_roads_i,
+            grid_roads_j=grid_roads_j,
+            coef_diffusion=coef_diffusion,
+            coef_breed=coef_breed,
+            coef_spread=coef_spread,
+            coef_slope=coef_slope,
+            coef_road=coef_road,
+            crit_slope=crit_slope,
+            prng=prng,
+            records=records,
+            num_iters=i + 1,
+        )
+    return grid_MC, records
+
+
+@jit
+def evaluate_combinations(
+    X0,
+    combs,
+    *,
+    years,
+    nyears,
+    nrows,
+    ncols,
+    n_iters,
+    grid_slope,
+    grid_excluded,
+    grid_roads,
+    grid_roads_dist,
+    grid_roads_i,
+    grid_roads_j,
+    crit_slope,
+    prng,
+    calibration_stats,
+):
+    out = np.zeros(len(combs))
+
+    for i in range(len(combs)):
+        c_diffusion, c_breed, c_spread, c_slope, c_road = combs[i]
+        index = (c_diffusion, c_breed, c_spread, c_slope, c_road)
+        print(index)
+
+        grid_MC, records = fill_montecarlo_grid(
+            X0,
+            nyears=nyears,
+            nrows=nrows,
+            ncols=ncols,
+            n_iters=n_iters,
+            grid_slope=grid_slope,
+            grid_excluded=grid_excluded,
+            grid_roads=grid_roads,
+            grid_roads_dist=grid_roads_dist,
+            grid_roads_i=grid_roads_i,
+            grid_roads_j=grid_roads_j,
+            coef_diffusion=c_diffusion,
+            coef_breed=c_breed,
+            coef_spread=c_spread,
+            coef_slope=c_slope,
+            coef_road=c_road,
+            crit_slope=crit_slope,
+            prng=prng,
+        )
+
+        out[i] = evaluate_records(
+            records, years=years, calibration_stats=calibration_stats
+        )
+    return out
 
 
 class SLEUTH(BaseEstimator):
@@ -31,7 +176,7 @@ class SLEUTH(BaseEstimator):
         grid_roads_i=np.empty(0),
         grid_roads_j=np.empty(0),
         crit_slope=50,
-        random_state=None
+        random_state=None,
     ):
         self.n_iters = n_iters
 
@@ -67,19 +212,21 @@ class SLEUTH(BaseEstimator):
 
         self.years_ = y
 
-        self.calibration_stats_ = [StatsVal() for year in y]
+        self.calibration_stats_ = np.zeros((len(y), 20))
+
+        # TODO: Vectorize this
         for i, year in enumerate(y):
             stats_val = self.calibration_stats_[i]
             (
-                stats_val.edges,
-                stats_val.clusters,
-                stats_val.pop,
-                stats_val.xmean,
-                stats_val.ymean,
-                stats_val.slope,
-                stats_val.rad,
-                stats_val.mean_cluster_size,
-                stats_val.percent_urban,
+                stats_val[J.EDGES],
+                stats_val[J.CLUSTERS],
+                stats_val[J.POP],
+                stats_val[J.XMEAN],
+                stats_val[J.YMEAN],
+                stats_val[J.SLOPE],
+                stats_val[J.RAD],
+                stats_val[J.MEAN_CLUSTER_SIZE],
+                stats_val[J.PERCENT_URBAN],
             ) = st.compute_stats(X[i], self.grid_slope)
 
         nyears = y[-1] - y[0] + 1
@@ -107,46 +254,25 @@ class SLEUTH(BaseEstimator):
             self.param_grids_.append(param_grid)
             self.osm_ = {}
 
-            combs = itertools.product(*param_grid.values())
-            for c_diffusion, c_breed, c_spread, c_slope, c_road in combs:
-                index = (c_diffusion, c_breed, c_spread, c_slope, c_road)
-
-                # If score was already calculated
-                if index in self.osm_:
-                    continue
-
-                grid_MC = np.zeros((nyears, nrows, ncols))
-
-                records = []
-                for year in y:
-                    print(year)
-                    record = Record(
-                        year=year,
-                        is_calibration=True,
-                        diffusion=c_diffusion,
-                        breed=c_breed,
-                        spread=c_spread,
-                        slope=c_slope,
-                        road=c_road,
-                    )
-                    records.append(record)
-
-                for i in range(self.n_iters):
-                    self.grow(
-                        grid_MC,
-                        X[0],
-                        coef_diffusion=c_diffusion,
-                        coef_breed=c_breed,
-                        coef_spread=c_spread,
-                        coef_slope=c_slope,
-                        coef_road=c_road,
-                        records=records,
-                    )
-
-                for record in records:
-                    record.compute_std()
-
-                self.osm_[index] = self._evaluate_records(records)
+            combs = list(itertools.product(*param_grid.values()))
+            osm = evaluate_combinations(
+                X[0],
+                combs,
+                nyears=nyears,
+                nrows=nrows,
+                ncols=ncols,
+                n_iters=self.n_iters,
+                grid_slope=self.grid_slope,
+                grid_excluded=self.grid_excluded,
+                grid_roads=self.grid_roads,
+                grid_roads_dist=self.grid_roads_dist,
+                grid_roads_i=self.grid_roads_i,
+                grid_roads_j=self.grid_roads_j,
+                crit_slope=self.crit_slope,
+                prng=self.random_state_,
+                years=self.years_,
+                calibration_stats=self.calibration_stats_,
+            )
 
             scores_sorted = list(
                 sorted(self.osm_.items(), key=lambda x: x[1], reverse=True)
@@ -198,124 +324,6 @@ class SLEUTH(BaseEstimator):
 
         grid_MC /= self.n_iters
         return grid_MC
-
-    def _evaluate_records(self, records):
-        # Calculate calibration statistics
-        # The modified coefficients are extracted
-        # from the last oberseved year average record.
-
-        # The optimal SLEUTH metric is the product of:
-        # compare, pop, edges, clusters, slope, x_mean, and y_mean
-        # Extract mean records for urban years
-        sim_means = [record.average for record in records]
-
-        assert len(sim_means) == len(self.calibration_stats_)
-
-        # Compare: ratio of final urbanizations at last control years
-        final_pop_sim = sim_means[-1].pop
-        final_pop_urb = self.calibration_stats_[-1].pop
-        compare = min(final_pop_sim, final_pop_urb) / max(final_pop_sim, final_pop_urb)
-
-        # Find regression coefficients, ignore seed year
-        osm_metrics_names = ["pop", "edges", "clusters", "slope", "xmean", "ymean"]
-        osm_metrics = []
-        for metric in osm_metrics_names:
-            # simulation skips seed year
-            sim_vals = [getattr(s, metric) for s in sim_means[1:]]
-            urb_vals = [getattr(s, metric) for s in self.calibration_stats_[1:]]
-            r, _ = pearsonr(sim_vals, urb_vals)
-            r = r**2
-            osm_metrics.append(r)
-
-        # Optimal metric
-        osm = np.prod(osm_metrics) * compare
-        return osm
-
-    def grow(
-        self,
-        grid_MC,
-        seed_grid,
-        *,
-        coef_diffusion,
-        coef_breed,
-        coef_spread,
-        coef_slope,
-        coef_road,
-        records=None
-    ):
-        nyears = grid_MC.shape[0]
-
-        # Initialize Z grid to the seed (first urban grid)
-        # TODO: Zero grid instead of creating new one.
-        # grd_Z = urban_grid[0].copy()
-        grd_Z = seed_grid.copy()
-
-        # Precalculate/reset slope weighs
-        # This can change due to self-modification during growth.
-        sweights = 1 - sp.slope_weight(self.grid_slope, coef_slope, self.crit_slope)
-
-        for i in range(nyears):
-            # Apply CA rules for current year
-            sng, sdc, og, rt, num_growth_pix = sp.spread(
-                grd_Z,
-                self.grid_slope,
-                self.grid_excluded,
-                self.grid_roads,
-                self.grid_roads_dist,
-                self.grid_roads_i,
-                self.grid_roads_j,
-                coef_diffusion,
-                coef_breed,
-                coef_spread,
-                coef_slope,
-                coef_road,
-                self.crit_slope,
-                self.random_state_,
-                sweights,
-            )
-
-            if records is not None:
-                record = records[i]
-                record.monte_carlo += 1
-
-                # Send stats to current year (ints)
-                record.this_year.sng = sng
-                record.this_year.sdc = sdc
-                record.this_year.og = og
-                record.this_year.rt = rt
-                record.this_year.num_growth_pix = num_growth_pix
-
-                # Store coefficients
-                record.this_year.diffusion = coef_diffusion
-                record.this_year.spread = coef_spread
-                record.this_year.breed = coef_breed
-                record.this_year.slope_resistance = coef_slope
-                record.this_year.road_gravity = coef_road
-
-                # Compute stats
-                (
-                    record.this_year.edges,
-                    record.this_year.clusters,
-                    record.this_year.pop,
-                    record.this_year.xmean,
-                    record.this_year.ymean,
-                    record.this_year.slope,
-                    record.this_year.rad,
-                    record.this_year.mean_cluster_size,
-                    record.this_year.percent_urban,
-                ) = sp.compute_stats(grd_Z, self.grid_slope)
-
-                # Growth
-                record.this_year.growth_rate = (
-                    100.0 * num_growth_pix / record.this_year.pop
-                )
-
-                # Update mean and sum of squares
-                record.update_mean_std()
-
-            # Accumulate MC samples
-            # TODO: avoid indexing making sure Z grid is at most 1.
-            grid_MC[i][grd_Z > 0] += 1
 
     def _more_tags(self):
         return {"X_types": ["3darray"]}

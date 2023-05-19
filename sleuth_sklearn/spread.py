@@ -1,9 +1,203 @@
 import numpy as np
-from functools import reduce
-from sleuth_sklearn.stats import compute_stats
-from sleuth_sklearn.stats import Record
+import sleuth_sklearn.stats as st
+
+from numba import jit, njit
+from sleuth_sklearn.indices import I, J
 
 
+@jit
+def grow(
+    seed_grid,
+    *,
+    nyears,
+    grid_slope,
+    grid_excluded,
+    grid_roads,
+    grid_roads_dist,
+    grid_roads_i,
+    grid_roads_j,
+    coef_diffusion,
+    coef_breed,
+    coef_spread,
+    coef_slope,
+    coef_road,
+    crit_slope,
+    prng,
+    records=np.array([]),
+    num_iters=None
+):
+    grid_MC = np.zeros((nyears, *seed_grid.shape), dtype=np.uintc)
+    # Initialize Z grid to the seed (first urban grid)
+    # TODO: Zero grid instead of creating new one.
+    grd_Z = seed_grid.copy()
+
+    # Precalculate/reset slope weighs
+    # This can change due to self-modification during growth.
+    sweights = 1 - slope_weight(grid_slope, coef_slope, crit_slope)
+
+    for i in range(nyears):
+        # Apply CA rules for current year
+        sng, sdc, og, rt, num_growth_pix = spread(
+            grd_Z,
+            grid_slope,
+            grid_excluded,
+            grid_roads,
+            grid_roads_dist,
+            grid_roads_i,
+            grid_roads_j,
+            coef_diffusion,
+            coef_breed,
+            coef_spread,
+            coef_slope,
+            coef_road,
+            crit_slope,
+            prng,
+            sweights,
+        )
+
+        if len(records) > 0:
+            record = records[i]
+
+            # Send stats to current year (ints)
+            record[I.THIS_YEAR][J.SNG] = sng
+            record[I.THIS_YEAR][J.SDC] = sdc
+            record[I.THIS_YEAR][J.OG] = og
+            record[I.THIS_YEAR][J.RT] = rt
+            record[I.THIS_YEAR][J.NUM_GROWTH_PIX] = num_growth_pix
+
+            # Store coefficients
+            record[I.THIS_YEAR][J.DIFFUSION] = coef_diffusion
+            record[I.THIS_YEAR][J.SPREAD] = coef_spread
+            record[I.THIS_YEAR][J.BREED] = coef_breed
+            record[I.THIS_YEAR][J.SLOPE_RESISTANCE] = coef_slope
+            record[I.THIS_YEAR][J.ROAD_GRAVITY] = coef_road
+
+            # Compute stats
+            (
+                record[I.THIS_YEAR][J.EDGES],
+                record[I.THIS_YEAR][J.CLUSTERS],
+                record[I.THIS_YEAR][J.POP],
+                record[I.THIS_YEAR][J.XMEAN],
+                record[I.THIS_YEAR][J.YMEAN],
+                record[I.THIS_YEAR][J.SLOPE],
+                record[I.THIS_YEAR][J.RAD],
+                record[I.THIS_YEAR][J.MEAN_CLUSTER_SIZE],
+                record[I.THIS_YEAR][J.PERCENT_URBAN],
+            ) = st.compute_stats(grd_Z, grid_slope)
+
+            # Growth
+            record[I.THIS_YEAR][J.GROWTH_RATE] = (
+                100.0 * num_growth_pix / record[I.THIS_YEAR][J.POP]
+            )
+
+            # Update mean and sum of squares
+            st.update_mean_std(record, num_iters)
+
+        # Accumulate MC samples
+        # TODO: avoid indexing making sure Z grid is at most 1.
+        grid_MC[i][grd_Z > 0] += 1
+    return grid_MC
+
+
+# def grow(
+#     grid_MC,
+#     seed_grid,
+
+#     *,
+#     grid_slope,
+#     grid_excluded,
+#     grid_roads,
+#     grid_roads_dist,
+#     grid_roads_i,
+#     grid_roads_j,
+
+#     coef_diffusion,
+#     coef_breed,
+#     coef_spread,
+#     coef_slope,
+#     coef_road,
+
+#     crit_slope,
+#     prng,
+
+#     records=[]
+# ):
+#     nyears = grid_MC.shape[0]
+
+#     # Initialize Z grid to the seed (first urban grid)
+#     # TODO: Zero grid instead of creating new one.
+#     # grd_Z = urban_grid[0].copy()
+#     grd_Z = seed_grid.copy()
+
+#     # Precalculate/reset slope weighs
+#     # This can change due to self-modification during growth.
+#     sweights = 1 - slope_weight(grid_slope, coef_slope, crit_slope)
+
+#     for i in range(nyears):
+#         # Apply CA rules for current year
+#         sng, sdc, og, rt, num_growth_pix = spread(
+#             grd_Z,
+#             grid_slope,
+#             grid_excluded,
+#             grid_roads,
+#             grid_roads_dist,
+#             grid_roads_i,
+#             grid_roads_j,
+#             coef_diffusion,
+#             coef_breed,
+#             coef_spread,
+#             coef_slope,
+#             coef_road,
+#             crit_slope,
+#             prng,
+#             sweights,
+#         )
+
+#         if len(records) > 0:
+#             record = records[i]
+#             record.monte_carlo += 1
+
+#             # Send stats to current year (ints)
+#             record.this_year.sng = sng
+#             record.this_year.sdc = sdc
+#             record.this_year.og = og
+#             record.this_year.rt = rt
+#             record.this_year.num_growth_pix = num_growth_pix
+
+#             # Store coefficients
+#             record.this_year.diffusion = coef_diffusion
+#             record.this_year.spread = coef_spread
+#             record.this_year.breed = coef_breed
+#             record.this_year.slope_resistance = coef_slope
+#             record.this_year.road_gravity = coef_road
+
+#             # Compute stats
+#             (
+#                 record.this_year.edges,
+#                 record.this_year.clusters,
+#                 record.this_year.pop,
+#                 record.this_year.xmean,
+#                 record.this_year.ymean,
+#                 record.this_year.slope,
+#                 record.this_year.rad,
+#                 record.this_year.mean_cluster_size,
+#                 record.this_year.percent_urban,
+#             ) = st.compute_stats(grd_Z, grid_slope)
+
+#             # Growth
+#             record.this_year.growth_rate = (
+#                 100.0 * num_growth_pix / record.this_year.pop
+#             )
+
+#             # Update mean and sum of squares
+#             record.update_mean_std()
+
+#         # Accumulate MC samples
+#         # TODO: avoid indexing making sure Z grid is at most 1.
+#         grid_MC[i][grd_Z > 0] += 1
+
+
+@njit
 def spread(
     grd_Z,
     grd_slope,
@@ -84,8 +278,7 @@ def spread(
     # Slope coef and crit are constant during a single step
     # TODO:Precalculate all slope weights?
 
-    # timers.SPR_PHASE1N3.start()
-    sng, sdc = phase1n3_new(
+    sng, sdc, grd_delta = phase1n3_new(
         grd_Z,
         grd_delta,
         # grd_slope,
@@ -98,10 +291,8 @@ def spread(
         # urb_attempt,
         sweights,
     )
-    # timers.SPR_PHASE1N3.stop()
 
-    # timers.SPR_PHASE4.start()
-    og = phase4_new(
+    og, grd_delta = phase4_new(
         grd_Z,
         grd_delta,
         # grd_slope,
@@ -113,9 +304,7 @@ def spread(
         # urb_attempt,
         sweights,
     )
-    # timers.SPR_PHASE4.stop()
 
-    # timers.SPR_PHASE5.start()
     rt = phase5(
         grd_Z,
         grd_delta,
@@ -140,13 +329,17 @@ def spread(
     # in the delta grid
     # excld value is the 100*probability of rejecting urbanization
     # TODO: implement as boolean operation without indexing
-    excld_mask = prng.random(size=grd_delta.shape) * 100 < grd_excluded
-    grd_delta[excld_mask] = 0
+    excld_mask = (prng.random(size=grd_delta.shape) * 100) < grd_excluded
+    coords = excld_mask.nonzero()
+    for a, b in zip(coords[0], coords[1]):
+        grd_delta[a, b] = 0
 
     # Urbanize in Z array for accumulated urbanization.
     # TODO: Try to avoid indexing, implement as boolean operation.
     mask = grd_delta > 0
-    grd_Z[mask] = grd_delta[mask]
+    coords = mask.nonzero()
+    for a, b in zip(coords[0], coords[1]):
+        grd_Z[a, b] = grd_delta[a, b]
     # avg_slope = grd_slope[mask].mean()
     num_growth_pix = mask.sum()
     # pop = (grd_Z >= C.PHASE0G).sum()
@@ -163,7 +356,8 @@ def phase_spontaneous(grd_delta, p_diff, prng, sweights):
     sng = mask.sum()
 
     # Update delta grid
-    np.logical_or(grd_delta, mask, out=grd_delta)
+    new_delta = np.logical_or(grd_delta, mask)
+    np.copyto(grd_delta, new_delta)
 
     return sng
 
@@ -186,11 +380,13 @@ def phase_breed(
     sdc = mask.sum()
 
     # Update delta grid
-    np.logical_or(grd_delta, mask, out=grd_delta)
+    new_delta = np.logical_or(grd_delta, mask)
+    np.copyto(grd_delta, new_delta)
 
     return sdc
 
 
+@njit
 def phase1n3_new(
     grd_Z,
     grd_delta,
@@ -258,7 +454,7 @@ def phase1n3_new(
     sng = mask.sum()
 
     # Update delta grid
-    np.logical_or(grd_delta, mask, out=grd_delta)
+    grd_delta = np.logical_or(grd_delta, mask)
 
     # For PHASE 2
     # kernel = np.array([[1,  1, 1],
@@ -286,11 +482,12 @@ def phase1n3_new(
     sdc = mask.sum()
 
     # Update delta grid
-    np.logical_or(grd_delta, mask, out=grd_delta)
+    grd_delta = np.logical_or(grd_delta, mask)
 
-    return sng, sdc
+    return sng, sdc, grd_delta
 
 
+@njit
 def phase4_new(
     grd_Z,
     grd_delta,
@@ -393,15 +590,16 @@ def phase4_new(
     mask = prng.random(size=grd_delta.shape) < p_urb
 
     # Update delta grid
-    np.logical_or(grd_delta, mask, out=grd_delta)
+    new_delta = np.logical_or(grd_delta, mask)
 
     # Get urbanize pixels in this phase
     # Note: this double counts already urbanized pixels.
     og = mask.sum()
 
-    return og
+    return og, new_delta
 
 
+@njit
 def phase5(
     grd_Z,
     grd_delta,
@@ -506,18 +704,28 @@ def phase5(
     # we may return the whole set of candidates.
 
     # Coordinates of new growth
-    coords = np.array(np.where(grd_delta > 0)).T
-
+    w = (grd_delta > 0).nonzero()
+    coords = np.stack((w[0], w[1])).T
     # Select n=breed growth candidates
+
     if len(coords) > 0:
-        coords = prng.choice(coords, size=int(coef_breed) + 1, replace=True)
+        rand_idx = prng.integers(0, coords.shape[0], size=int(coef_breed) + 1)
+        coords = coords[rand_idx]
 
     # Search for nearest road, and select only if road is close enough
-    dists = grd_road_dist[coords[:, 0], coords[:, 1]]
+    dists = np.empty(len(coords))
+    for idx, (i, j) in enumerate(coords):
+        dists[idx] = grd_road_dist[i, j]
+
     coords = coords[dists < max_dist]
-    road_i = grd_road_i[coords[:, 0], coords[:, 1]]
-    road_j = grd_road_j[coords[:, 0], coords[:, 1]]
-    rcoords = np.column_stack([road_i, road_j])
+
+    road_i = np.empty(len(coords), dtype=np.int64)
+    road_j = np.empty(len(coords), dtype=np.int64)
+    for idx, (i, j) in enumerate(coords):
+        road_i[idx] = grd_road_i[i, j]
+        road_j[idx] = grd_road_j[i, j]
+
+    rcoords = np.column_stack((road_i, road_j))
 
     # For selected roads perform a random walk and attempt urbanization
     # It is perhaps faster justo to choose a road pixel at random and
@@ -542,11 +750,16 @@ def phase5(
     # See:
     # http://www.ncgia.ucsb.edu/projects/gig/Dnload/dn_describe3.0p_01.html
     new_sites = np.zeros_like(rcoords)
+
     for i, rc in enumerate(rcoords):
         for step in range(int(coef_diffusion)):
             prng.shuffle(nlist)
             nbrs = rc + nlist
-            nbrs = nbrs[grd_roads[nbrs[:, 0], nbrs[:, 1]] > 0]
+            flat_idx = np.zeros(len(nbrs), dtype=np.bool_)
+            for a, (b, c) in enumerate(nbrs):
+                flat_idx[a] = grd_roads[b, c] > 0
+
+            nbrs = nbrs[flat_idx]
             # TODO: there is a bug when a road is a single pixel and has no neighbors
             # TODO: Fix in road preprocessing
             # The following is a hacky patch
@@ -556,7 +769,10 @@ def phase5(
         new_sites[i] = rc
 
     # Apply urbanization test based on road weights
-    mask = prng.integers(100) < grd_roads[new_sites[:, 0], new_sites[:, 1]]
+    bottom = prng.integers(0, 100)
+    mask = np.zeros(len(new_sites), dtype=np.bool_)
+    for a, (b, c) in enumerate(new_sites):
+        mask[a] = bottom < grd_roads[b, c]
     new_sites = new_sites[mask]
 
     # Attempt to urbanize
@@ -575,7 +791,8 @@ def phase5(
     # Log successes
     rt = len(new_sites)
     # Update available pixels in delta grid
-    grd_delta[new_sites[:, 0], new_sites[:, 1]] = 1
+    for a, b in new_sites:
+        grd_delta[a, b] = 1
 
     # Attempt to create new urban centers, urbanize 2 neighbors
     for i, j in new_sites:
@@ -595,12 +812,15 @@ def phase5(
         # choose two urbanizable neighbors
         ncoords = ncoords[mask][:2]
         rt += len(ncoords)
+
         # Update delta grid with values for phase 5
-        grd_delta[ncoords[:, 0], ncoords[:, 1]] = 1
+        for a, b in ncoords:
+            grd_delta[a, b] = 1
 
     return rt
 
 
+@njit
 def urbanizable(
     coords,
     grd_Z,
@@ -650,10 +870,13 @@ def urbanizable(
     """
 
     # Extract vectors of grid values for candidate pixels.
-    ic, jc = coords[:, 0], coords[:, 1]
-    z = grd_Z[ic, jc]
-    delta = grd_delta[ic, jc]
-    slope = grd_slope[ic, jc]
+    z = np.zeros(len(coords), dtype=grd_Z.dtype)
+    delta = np.zeros(len(coords), dtype=grd_delta.dtype)
+    slope = np.zeros(len(coords), dtype=grd_slope.dtype)
+    for a, (b, c) in enumerate(coords):
+        z[a] = grd_Z[b, c]
+        delta[a] = grd_delta[b, c]
+        slope[a] = grd_slope[b, c]
     # excld = grd_excluded[ic, jc]
 
     # Check if not already urbanized in original and delta grid
@@ -674,20 +897,13 @@ def urbanizable(
     # excld_mask = (prng.integers(100, size=len(excld)) >= excld)
     # urb_attempt.excluded_failure += (~excld_mask).sum()
 
-    mask = reduce(
-        np.logical_and,
-        [
-            z_mask,
-            delta_mask,
-            slp_mask,
-            # excld_mask
-        ],
-    )
-    # urb_attempt.successes += mask.sum()
+    mask = np.logical_and(z_mask, delta_mask)
+    mask = np.logical_and(mask, slp_mask)
 
     return mask
 
 
+@njit
 def urbanizable_nghbrs(
     i,
     j,
@@ -741,7 +957,7 @@ def urbanizable_nghbrs(
        urbanizable. Same shape as nlist.
     """
 
-    nlist = (i, j) + np.array(
+    nlist = np.array([i, j]) + np.array(
         ((-1, -1), (0, -1), (+1, -1), (+1, 0), (+1, +1), (0, +1), (-1, +1), (-1, 0))
     )
     # TODO: instead of shyffling in place, generate randon indices.
@@ -762,6 +978,7 @@ def urbanizable_nghbrs(
     return nlist, mask
 
 
+@njit
 def slope_weight(slope, slp_res, critical_slp):
     """Calculate slope resistance weights.
 
@@ -799,7 +1016,7 @@ def slope_weight(slope, slp_res, critical_slp):
 
     """
 
-    slope = np.asarray(slope)
+    # slope = np.array(slope)
     val = (critical_slp - slope) / critical_slp
     exp = 2 * slp_res / 100
     slope_w = np.where(slope >= critical_slp, 0, val)
@@ -808,6 +1025,7 @@ def slope_weight(slope, slp_res, critical_slp):
     return slope_w
 
 
+@njit
 def coef_self_modification(
     coef_diffusion,
     coef_breed,
@@ -947,6 +1165,7 @@ def coef_self_modification(
 #     return N
 
 
+@njit
 def count_neighbors(Z):
     N = np.zeros(Z.shape, dtype=np.int8)
     N[1:-1, 1:-1] += (

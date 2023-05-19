@@ -1,0 +1,3 @@
+THIS_YEAR = 0
+AVERAGE = 1
+STD = 2

@@ -167,4 +167,4 @@ test/
 log
 stages*/
 generated*/
-test.ipynb
+*.ipynb

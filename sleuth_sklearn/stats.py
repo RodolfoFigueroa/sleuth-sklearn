@@ -1,7 +1,29 @@
 import numpy as np
+import sleuth_sklearn.labeling as sl
 
 from dataclasses import dataclass, fields, field
-from scipy.ndimage import convolve, label, center_of_mass
+from numba import jit
+from sleuth_sklearn.indices import I
+from scipy.ndimage import convolve, center_of_mass
+
+
+def update_mean_std(record, n):
+    for j in range(record.shape[1]):
+        value = record[I.THIS_YEAR][j]
+        prev_mean = record[I.AVERAGE][j]
+        prev_sum = record[I.STD][j]
+
+        new_mean = prev_mean + (value - prev_mean) / n
+        new_sum = prev_sum + (value - prev_mean) * (value - new_mean)
+
+        record[I.AVERAGE][j] = new_mean
+        record[I.STD] = new_sum
+
+
+def compute_std(record, n):
+    for j in range(record.shape[1]):
+        sum_sq = record[I.STD][j]
+        record[I.STD][j] = np.sqrt(sum_sq / n)
 
 
 @dataclass
@@ -80,6 +102,7 @@ class UrbAttempt:
             setattr(self, f.name, 0)
 
 
+@jit
 def compute_stats(urban, slope):
     # Assuming binarized urban raster (0/1)
     area = urban.sum()
@@ -92,7 +115,7 @@ def compute_stats(urban, slope):
     edges = count_edges(urban)
 
     # Get a labeled array, by default considers von neumann neighbors
-    _, nclusters = label(urban)
+    _, nclusters = sl.hoshen_kopelman(urban > 0)
     assert nclusters > 0
 
     mean_cluster_size = area / nclusters
@@ -120,6 +143,7 @@ def compute_stats(urban, slope):
     )
 
 
+@jit
 def count_edges(urban):
     # Peform a convolution to search for edges
     # Orignal SLEUTH code searches in the Von Neuman
@@ -130,7 +154,7 @@ def count_edges(urban):
     # Scipy's ndimage.convolve is faster than signal.convolve
     # for 2D images
     # signal.convolve is more general and handles ndim arrays
-    # TODO: splicitly pass output array to save memory
+    # TODO: explicitly pass output array to save memory
     conv = convolve(urban, kernel, mode="constant", output=int)
 
     edges = (conv < 0).sum()
