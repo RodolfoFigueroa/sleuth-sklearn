@@ -7,7 +7,7 @@ import sleuth_sklearn.utils as su
 
 from numba import njit, prange
 from sklearn.base import BaseEstimator
-from sleuth_sklearn.indices import I, J
+from sleuth_sklearn.indices import J
 
 
 @njit(parallel=True)
@@ -60,7 +60,7 @@ def evaluate_combinations(
 
 
 def calculate_initial_stats(X, y, grid_slope):
-    calibration_stats = np.zeros((len(y), 20))
+    calibration_stats = np.zeros((len(y), J.TOTAL_SIZE))
 
     # TODO: Vectorize this
     for i in range(len(y)):

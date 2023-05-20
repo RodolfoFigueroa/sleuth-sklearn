@@ -1,11 +1,10 @@
 import numpy as np
 import sleuth_sklearn.labeling as sl
 
-from numba import njit
+from numba import jit_module
 from sleuth_sklearn.indices import J
 
 
-@njit
 def compute_stats(urban, slope):
     # Assuming binarized urban raster (0/1)
     area = urban.sum()
@@ -47,7 +46,6 @@ def compute_stats(urban, slope):
     )
 
 
-@njit
 def count_edges(arr):
     s = 0
     for i in range(arr.shape[0]):
@@ -62,7 +60,6 @@ def count_edges(arr):
     return s
 
 
-@njit
 def evaluate_records(
     records,
     years,
@@ -82,25 +79,27 @@ def evaluate_records(
     assert sim_means.shape == calibration_stats.shape
 
     # Compare: ratio of final urbanizations at last control years
-    final_pop_sim = sim_means[-1][J.POP]
-    final_pop_urb = calibration_stats[-1][J.POP]
+    final_pop_sim = sim_means[-1, J.POP]
+    final_pop_urb = calibration_stats[-1, J.POP]
     compare = min(final_pop_sim, final_pop_urb) / max(final_pop_sim, final_pop_urb)
 
     # Find regression coefficients, ignore seed year
     # osm_metrics_names = ["pop", "edges", "clusters", "slope", "xmean", "ymean"]
     osm_metrics_idx = [J.POP, J.EDGES, J.CLUSTERS, J.SLOPE, J.XMEAN, J.YMEAN]
-    osm_metrics = []
-    for idx in osm_metrics_idx:
+    osm_metrics = np.zeros(len(osm_metrics_idx), dtype=np.float64)
+
+    for i, idx in enumerate(osm_metrics_idx):
         # simulation skips seed year
-        sim_vals = [s[idx] for s in sim_means[1:]]
-        urb_vals = [s[idx] for s in calibration_stats[1:]]
-        # r, _ = pearsonr(sim_vals, urb_vals)
+        sim_vals = sim_means[1:, idx]
+        urb_vals = calibration_stats[1:, idx]
         cor_mat = np.corrcoef(sim_vals, urb_vals)
         r = cor_mat[0, 1]
         r = r**2
-        osm_metrics.append(r)
-    osm_metrics = np.array(osm_metrics)
+        osm_metrics[i] = r
 
     # Optimal metric
     osm = np.prod(osm_metrics) * compare
     return osm
+
+
+jit_module(nopython=True, cache=True)

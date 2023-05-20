@@ -2,7 +2,7 @@ import numpy as np
 import sleuth_sklearn.stats as st
 
 from numba import njit, prange, types
-from sleuth_sklearn.indices import I, J
+from sleuth_sklearn.indices import J
 
 
 @njit
@@ -885,13 +885,6 @@ def grow(
         records[i, J.RT] = rt
         records[i, J.NUM_GROWTH_PIX] = num_growth_pix
 
-        # Store coefficients
-        records[i, J.DIFFUSION] = coef_diffusion
-        records[i, J.SPREAD] = coef_spread
-        records[i, J.BREED] = coef_breed
-        records[i, J.SLOPE_RESISTANCE] = coef_slope
-        records[i, J.ROAD_GRAVITY] = coef_road
-
         # Compute stats
         stats = st.compute_stats(grd_Z, grid_slope)
         records[i, J.EDGES] = stats[0]
@@ -956,7 +949,7 @@ def fill_montecarlo_grid(
     crit_slope,
     prng,
 ):
-    records = np.zeros((nyears, 20), dtype=np.float64)
+    records = np.zeros((nyears, J.TOTAL_SIZE), dtype=np.float64)
     for i in range(n_iters):
         res = grow(
             X0,
