@@ -1,115 +1,18 @@
 import numpy as np
 import sleuth_sklearn.labeling as sl
 
-from dataclasses import dataclass, fields, field
-from numba import jit
-from sleuth_sklearn.indices import I
-from scipy.ndimage import convolve, center_of_mass
+from numba import njit
+from sleuth_sklearn.indices import J
 
 
-def update_mean_std(record, n):
-    for j in range(record.shape[1]):
-        value = record[I.THIS_YEAR][j]
-        prev_mean = record[I.AVERAGE][j]
-        prev_sum = record[I.STD][j]
-
-        new_mean = prev_mean + (value - prev_mean) / n
-        new_sum = prev_sum + (value - prev_mean) * (value - new_mean)
-
-        record[I.AVERAGE][j] = new_mean
-        record[I.STD] = new_sum
-
-
-def compute_std(record, n):
-    for j in range(record.shape[1]):
-        sum_sq = record[I.STD][j]
-        record[I.STD][j] = np.sqrt(sum_sq / n)
-
-
-@dataclass
-class StatsVal:
-    sng: float = 0.0
-    sdc: float = 0.0
-    og: float = 0.0
-    rt: float = 0.0
-    num_growth_pix: float = 0.0
-    diffusion: float = 0.0
-    spread: float = 0.0
-    breed: float = 0.0
-    slope_resistance: float = 0.0
-    road_gravity: float = 0.0
-    edges: float = 0.0
-    clusters: float = 0.0
-    pop: float = 0.0
-    xmean: float = 0.0
-    ymean: float = 0.0
-    slope: float = 0.0
-    rad: float = 0.0
-    mean_cluster_size: float = 0.0
-    percent_urban: float = 0.0
-    growth_rate: float = 0.0
-
-    def reset(self):
-        for f in fields(self):
-            setattr(self, f.name, 0.0)
-
-
-@dataclass
-class Record:
-    year: int
-    is_calibration: bool
-    diffusion: int
-    breed: int
-    spread: int
-    slope: int
-    road: int
-    monte_carlo: int = 0
-    this_year: StatsVal = field(default_factory=StatsVal)
-    average: StatsVal = field(default_factory=StatsVal)
-    std: StatsVal = field(default_factory=StatsVal)
-
-    def update_mean_std(self):
-        # Update the mean and sum of squares using
-        # Welford's algorithm
-
-        for f in fields(self.this_year):
-            value = getattr(self.this_year, f.name)
-            prev_mean = getattr(self.average, f.name)
-            prev_sum = getattr(self.std, f.name)
-
-            new_mean = prev_mean + (value - prev_mean) / self.monte_carlo
-            new_sum = prev_sum + (value - prev_mean) * (value - new_mean)
-
-            setattr(self.average, f.name, new_mean)
-            setattr(self.std, f.name, new_sum)
-
-    def compute_std(self):
-        for f in fields(self.this_year):
-            sum_sq = getattr(self.std, f.name)
-            setattr(self.std, f.name, np.sqrt(sum_sq / self.monte_carlo))
-
-
-@dataclass
-class UrbAttempt:
-    successes: int = 0
-    z_failure: int = 0
-    delta_failure: int = 0
-    slope_failure: int = 0
-    excluded_failure: int = 0
-
-    def reset(self):
-        for f in fields(self):
-            setattr(self, f.name, 0)
-
-
-@jit
+@njit
 def compute_stats(urban, slope):
     # Assuming binarized urban raster (0/1)
     area = urban.sum()
     # orginal sleuth code discounts roads and excluded pixels
     # and include roads pixels as urban, which seems weird
     # anyhow, since excluded and roads are fixed, this just rescales
-    percent_urban = area / np.prod(urban.size) * 100
+    percent_urban = area / urban.size * 100
 
     # number of pixels on urban edge
     edges = count_edges(urban)
@@ -123,7 +26,8 @@ def compute_stats(urban, slope):
     avg_slope = (slope * urban).mean()
 
     # Centroid of urban pixels
-    ymean, xmean = center_of_mass(urban)
+    nzi, nzj = urban.nonzero()
+    ymean, xmean = nzi.mean(), nzj.mean()
 
     # radius of circle of area equal to urban area
     rad = np.sqrt(area / np.pi)
@@ -143,25 +47,60 @@ def compute_stats(urban, slope):
     )
 
 
-@jit
-def count_edges(urban):
-    # Peform a convolution to search for edges
-    # Orignal SLEUTH code searches in the Von Neuman
-    # neighborhood for empty cells. This is akin to perform
-    # a convolution with the Laplacian kernel
-    kernel = np.array([[0, 1, 0], [1, -4, 1], [0, 1, 0]])
+@njit
+def count_edges(arr):
+    s = 0
+    for i in range(arr.shape[0]):
+        for j in range(arr.shape[1]):
+            a = -4 * arr[i, j]
+            b = arr[i - 1, j] if i - 1 >= 0 else 0
+            c = arr[i + 1, j] if i + 1 < arr.shape[0] else 0
+            d = arr[i, j - 1] if j - 1 >= 0 else 0
+            e = arr[i, j + 1] if j + 1 < arr.shape[1] else 0
+            tot = a + b + c + d + e
+            s += tot < 0
+    return s
 
-    # Scipy's ndimage.convolve is faster than signal.convolve
-    # for 2D images
-    # signal.convolve is more general and handles ndim arrays
-    # TODO: explicitly pass output array to save memory
-    conv = convolve(urban, kernel, mode="constant", output=int)
 
-    edges = (conv < 0).sum()
+@njit
+def evaluate_records(
+    records,
+    years,
+    calibration_stats,
+):
+    # Calculate calibration statistics
+    # The modified coefficients are extracted
+    # from the last oberseved year average record.
 
-    # Alterantive: loop only over urbanized pixels. Urbanize pixel
-    # coordinates may be stored in a set, which allows for fast
-    # lookup, insertion and deletion. But the convolution operator may
-    # be adapted for GPU computation.
+    # The optimal SLEUTH metric is the product of:
+    # compare, pop, edges, clusters, slope, x_mean, and y_mean
+    # Extract mean records for urban years
+    # sim_means = [record[I.AVERAGE] for record, year in zip(records, sim_years) if year in self.years_]
+    sim_idx = np.array([year in years for year in range(years[0], years[-1] + 1)])
+    sim_means = records[sim_idx]
 
-    return edges
+    assert sim_means.shape == calibration_stats.shape
+
+    # Compare: ratio of final urbanizations at last control years
+    final_pop_sim = sim_means[-1][J.POP]
+    final_pop_urb = calibration_stats[-1][J.POP]
+    compare = min(final_pop_sim, final_pop_urb) / max(final_pop_sim, final_pop_urb)
+
+    # Find regression coefficients, ignore seed year
+    # osm_metrics_names = ["pop", "edges", "clusters", "slope", "xmean", "ymean"]
+    osm_metrics_idx = [J.POP, J.EDGES, J.CLUSTERS, J.SLOPE, J.XMEAN, J.YMEAN]
+    osm_metrics = []
+    for idx in osm_metrics_idx:
+        # simulation skips seed year
+        sim_vals = [s[idx] for s in sim_means[1:]]
+        urb_vals = [s[idx] for s in calibration_stats[1:]]
+        # r, _ = pearsonr(sim_vals, urb_vals)
+        cor_mat = np.corrcoef(sim_vals, urb_vals)
+        r = cor_mat[0, 1]
+        r = r**2
+        osm_metrics.append(r)
+    osm_metrics = np.array(osm_metrics)
+
+    # Optimal metric
+    osm = np.prod(osm_metrics) * compare
+    return osm

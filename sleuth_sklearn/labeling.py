@@ -1,10 +1,17 @@
+import numpy as np
+
+from numba import njit
+
+
+@njit
 def hoshen_kopelman(matrix):
     matrix = matrix.copy()
+    matrix = matrix.astype(np.int64)
 
     m, n = matrix.shape
     max_labels = (m * n) // 2
 
-    labels = np.empty(max_labels, dtype=int)
+    labels = np.empty(max_labels, dtype=np.int64)
     labels[0] = 0
 
     def find(x):
@@ -40,7 +47,7 @@ def hoshen_kopelman(matrix):
                 else:
                     matrix[i][j] = union(up, left)
 
-    new_labels = np.zeros(m * n // 2, dtype=int)
+    new_labels = np.zeros(m * n // 2, dtype=np.int64)
     for i in range(m):
         for j in range(n):
             if matrix[i, j] > 0:
