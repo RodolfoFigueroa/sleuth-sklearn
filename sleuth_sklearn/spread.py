@@ -1,7 +1,7 @@
 import numpy as np
 import sleuth_sklearn.stats as st
 
-from numba import njit, prange, types
+from numba import generated_jit, njit, prange, types
 from sleuth_sklearn.indices import J
 
 
@@ -29,7 +29,7 @@ def slope_weight(slope, slp_res, critical_slp):
 
     Parameters
     ----------
-    slope : float or np.array
+    slope : float
         Slope values for which to calculate resistance.
     slp_res : float
         Coefficient governing the shape of the resistance function.
@@ -43,7 +43,6 @@ def slope_weight(slope, slp_res, critical_slp):
 
     """
 
-    # slope = np.array(slope)
     val = (critical_slp - slope) / critical_slp
     exp = 2 * slp_res / 100
     slope_w = np.where(slope >= critical_slp, 0, val)
@@ -52,9 +51,9 @@ def slope_weight(slope, slp_res, critical_slp):
     return slope_w
 
 
-@njit
+@njit(types.i4[:, :](types.b1[:, :]))
 def count_neighbors(Z):
-    N = np.zeros(Z.shape, dtype=np.int64)
+    N = np.zeros(Z.shape, dtype=np.int32)
     N[1:-1, 1:-1] += (
         Z[:-2, :-2]
         + Z[:-2, 1:-1]
@@ -68,7 +67,16 @@ def count_neighbors(Z):
     return N
 
 
-@njit
+@njit(
+    types.Tuple((types.i4, types.i4, types.b1[:, :]))(
+        types.b1[:, :],
+        types.b1[:, :],
+        types.i4,
+        types.i4,
+        types.NumPyRandomGeneratorType("prng"),
+        types.f8[:, :],
+    )
+)
 def phase1n3_new(
     grd_Z,
     grd_delta,
@@ -169,7 +177,15 @@ def phase1n3_new(
     return sng, sdc, grd_delta
 
 
-@njit
+@njit(
+    types.Tuple((types.i4, types.b1[:, :]))(
+        types.b1[:, :],
+        types.b1[:, :],
+        types.i4,
+        types.NumPyRandomGeneratorType("prng"),
+        types.f8[:, :],
+    )
+)
 def phase4_new(
     grd_Z,
     grd_delta,
@@ -281,7 +297,18 @@ def phase4_new(
     return og, new_delta
 
 
-@njit
+@njit(
+    types.bool_[:](
+        types.i4[:, :],
+        types.b1[:, :],
+        types.b1[:, :],
+        types.i4[:, :],
+        types.i4[:, :],
+        types.i4,
+        types.i4,
+        types.NumPyRandomGeneratorType("prng"),
+    )
+)
 def urbanizable(
     coords,
     grd_Z,
@@ -331,9 +358,9 @@ def urbanizable(
     """
 
     # Extract vectors of grid values for candidate pixels.
-    z = np.zeros(len(coords), dtype=grd_Z.dtype)
-    delta = np.zeros(len(coords), dtype=grd_delta.dtype)
-    slope = np.zeros(len(coords), dtype=grd_slope.dtype)
+    z = np.zeros(len(coords), dtype=np.bool_)
+    delta = np.zeros(len(coords), dtype=np.bool_)
+    slope = np.zeros(len(coords), dtype=np.int32)
     for a, (b, c) in enumerate(coords):
         z[a] = grd_Z[b, c]
         delta[a] = grd_delta[b, c]
@@ -341,8 +368,8 @@ def urbanizable(
     # excld = grd_excluded[ic, jc]
 
     # Check if not already urbanized in original and delta grid
-    z_mask = z == 0
-    delta_mask = delta == 0
+    z_mask = np.invert(z)
+    delta_mask = np.invert(delta)
     # urb_attempt.z_failure += (~z_mask).sum()
     # urb_attempt.delta_failure += (~delta_mask).sum()
 
@@ -364,8 +391,20 @@ def urbanizable(
     return mask
 
 
-@njit
-def urbanizable_nghbrs(
+@njit(
+    types.Tuple((types.i4[:, :], types.bool_[:]))(
+        types.i4,
+        types.i4,
+        types.b1[:, :],
+        types.b1[:, :],
+        types.i4[:, :],
+        types.i4[:, :],
+        types.i4,
+        types.i4,
+        types.NumPyRandomGeneratorType("prng"),
+    )
+)
+def urbanizable_neighbors(
     i,
     j,
     grd_Z,
@@ -418,10 +457,11 @@ def urbanizable_nghbrs(
        urbanizable. Same shape as nlist.
     """
 
-    nlist = np.array([i, j]) + np.array(
-        ((-1, -1), (0, -1), (+1, -1), (+1, 0), (+1, +1), (0, +1), (-1, +1), (-1, 0))
+    nlist = np.array([i, j], dtype=np.int32) + np.array(
+        ((-1, -1), (0, -1), (+1, -1), (+1, 0), (+1, +1), (0, +1), (-1, +1), (-1, 0)),
+        dtype=np.int32,
     )
-    # TODO: instead of shyffling in place, generate randon indices.
+    # TODO: instead of shuffling in place, generate randon indices.
     prng.shuffle(nlist)
     # Obtain urbanizable neighbors
     mask = urbanizable(
@@ -439,14 +479,31 @@ def urbanizable_nghbrs(
     return nlist, mask
 
 
-@njit
+@njit(
+    types.i4(
+        types.b1[:, :],
+        types.b1[:, :],
+        types.i4[:, :],
+        types.i4[:, :],
+        types.i4[:, :],
+        types.i4[:, :],
+        types.i4[:, :],
+        types.i4[:, :],
+        types.i4,
+        types.i4,
+        types.i4,
+        types.i4,
+        types.i4,
+        types.NumPyRandomGeneratorType("prng"),
+    )
+)
 def phase5(
     grd_Z,
     grd_delta,
     grd_slope,
     grd_excluded,
     grd_roads,
-    grd_road_dist,
+    grd_roads_dist,
     grd_road_i,
     grd_road_j,
     coef_road,
@@ -555,12 +612,12 @@ def phase5(
     # Search for nearest road, and select only if road is close enough
     dists = np.empty(len(coords))
     for idx, (i, j) in enumerate(coords):
-        dists[idx] = grd_road_dist[i, j]
+        dists[idx] = grd_roads_dist[i, j]
 
     coords = coords[dists < max_dist]
 
-    road_i = np.empty(len(coords), dtype=np.int64)
-    road_j = np.empty(len(coords), dtype=np.int64)
+    road_i = np.empty(len(coords), dtype=np.int32)
+    road_j = np.empty(len(coords), dtype=np.int32)
     for idx, (i, j) in enumerate(coords):
         road_i[idx] = grd_road_i[i, j]
         road_j[idx] = grd_road_j[i, j]
@@ -581,7 +638,8 @@ def phase5(
             (-1, +1),
             (-1, 0),
             # (0, 0)  # Allows to stay in the same spot, useful if road has no neighbors
-        )
+        ),
+        dtype=np.int32,
     )
 
     # Here we apply road search as defined in patch_01, which is
@@ -637,7 +695,7 @@ def phase5(
     # Attempt to create new urban centers, urbanize 2 neighbors
     for i, j in new_sites:
         # get urbanizable neighbors
-        ncoords, mask = urbanizable_nghbrs(
+        ncoords, mask = urbanizable_neighbors(
             i,
             j,
             grd_Z,
@@ -660,7 +718,25 @@ def phase5(
     return rt
 
 
-@njit
+@njit(
+    types.Tuple((types.i4, types.i4, types.i4, types.i4, types.i4))(
+        types.b1[:, :],
+        types.i4[:, :],
+        types.i4[:, :],
+        types.i4[:, :],
+        types.i4[:, :],
+        types.i4[:, :],
+        types.i4[:, :],
+        types.i4,
+        types.i4,
+        types.i4,
+        types.i4,
+        types.i4,
+        types.i4,
+        types.NumPyRandomGeneratorType("prng"),
+        types.f8[:, :],
+    ),
+)
 def spread(
     grd_Z,
     grd_slope,
@@ -736,7 +812,7 @@ def spread(
 
     # Initialize delta grid to store temporal urbanization.
     # TODO: zero grid instead of creating
-    grd_delta = np.zeros_like(grd_Z)
+    grd_delta = np.zeros(grd_Z.shape, dtype=np.bool_)
 
     # Slope coef and crit are constant during a single step
     # TODO:Precalculate all slope weights?
@@ -769,20 +845,20 @@ def spread(
     )
 
     rt = phase5(
-        grd_Z,
-        grd_delta,
-        grd_slope,
-        grd_excluded,
-        grd_roads,
-        grd_roads_dist,
-        grd_road_i,
-        grd_road_j,
-        coef_road,
-        coef_diffusion,
-        coef_breed,
-        coef_slope,
-        crit_slope,
-        prng,
+        grd_Z=grd_Z,
+        grd_delta=grd_delta,
+        grd_slope=grd_slope,
+        grd_excluded=grd_excluded,
+        grd_roads=grd_roads,
+        grd_roads_dist=grd_roads_dist,
+        grd_road_i=grd_road_i,
+        grd_road_j=grd_road_j,
+        coef_road=coef_road,
+        coef_diffusion=coef_diffusion,
+        coef_breed=coef_breed,
+        coef_slope=coef_slope,
+        crit_slope=crit_slope,
+        prng=prng,
         # urb_attempt
     )
     # timers.SPR_PHASE5.stop()
@@ -811,25 +887,24 @@ def spread(
 
 
 @njit(
-    # types.Tuple((types.i8[:,:,:], types.f8[:,:]))
-    # (
-    #     types.i8[:,:],
-    #     types.i8,
-    #     types.i8[:,:],
-    #     types.i8[:,:],
-    #     types.i8[:,:],
-    #     types.i8[:,:],
-    #     types.i8[:,:],
-    #     types.i8[:,:],
-    #     types.i8,
-    #     types.i8,
-    #     types.i8,
-    #     types.i8,
-    #     types.i8,
-    #     types.i8,
-    #     types.NumPyRandomGeneratorType("NumPyRandomGeneratorType")
-    # ),
-    cache=True
+    types.Tuple((types.i4[:, :, :], types.f8[:, :]))(
+        types.b1[:, :],
+        types.i8,
+        types.i4[:, :],
+        types.i4[:, :],
+        types.i4[:, :],
+        types.i4[:, :],
+        types.i4[:, :],
+        types.i4[:, :],
+        types.i4,
+        types.i4,
+        types.i4,
+        types.i4,
+        types.i4,
+        types.i4,
+        types.NumPyRandomGeneratorType("NumPyRandomGeneratorType"),
+    ),
+    cache=False,
 )
 def grow(
     seed_grid,
@@ -848,8 +923,8 @@ def grow(
     crit_slope,
     prng,
 ):
-    grid_MC = np.zeros((nyears, *seed_grid.shape), dtype=np.int64)
-    records = np.zeros((nyears, 20), dtype=np.float64)
+    grid_MC = np.zeros((nyears, *seed_grid.shape), dtype=np.int32)
+    records = np.zeros((nyears, J.TOTAL_SIZE), dtype=np.float64)
     # Initialize Z grid to the seed (first urban grid)
     # TODO: Zero grid instead of creating new one.
     grd_Z = seed_grid.copy()
@@ -886,16 +961,20 @@ def grow(
         records[i, J.NUM_GROWTH_PIX] = num_growth_pix
 
         # Compute stats
-        stats = st.compute_stats(grd_Z, grid_slope)
-        records[i, J.EDGES] = stats[0]
-        records[i, J.CLUSTERS] = stats[1]
-        records[i, J.POP] = stats[2]
-        records[i, J.XMEAN] = stats[3]
-        records[i, J.YMEAN] = stats[4]
-        records[i, J.SLOPE] = stats[5]
-        records[i, J.RAD] = stats[6]
-        records[i, J.MEAN_CLUSTER_SIZE] = stats[7]
-        records[i, J.PERCENT_URBAN] = stats[8]
+        idx_arr = np.array(
+            [
+                J.EDGES,
+                J.CLUSTERS,
+                J.POP,
+                J.XMEAN,
+                J.YMEAN,
+                J.SLOPE,
+                J.RAD,
+                J.MEAN_CLUSTER_SIZE,
+                J.PERCENT_URBAN,
+            ]
+        )
+        records[i, idx_arr] = st.compute_stats(grd_Z, grid_slope)
 
         # Growth
         records[i, J.GROWTH_RATE] = 100.0 * num_growth_pix / records[i, J.POP]
@@ -910,26 +989,25 @@ def grow(
 
 
 @njit(
-    # types.f8[:,:]
-    # (
-    #     types.i8[:,:],
-    #     types.i8,
-    #     types.i8,
-    #     types.i8[:,:],
-    #     types.i8[:,:],
-    #     types.i8[:,:],
-    #     types.i8[:,:],
-    #     types.i8[:,:],
-    #     types.i8[:,:],
-    #     types.i8,
-    #     types.i8,
-    #     types.i8,
-    #     types.i8,
-    #     types.i8,
-    #     types.i8,
-    #     types.NumPyRandomGeneratorType("NumPyRandomGeneratorType")
-    # ),
-    parallel=False
+    types.f8[:, :](
+        types.b1[:, :],
+        types.i8,  # nyears - Do NOT change
+        types.i8,
+        types.i4[:, :],
+        types.i4[:, :],
+        types.i4[:, :],
+        types.i4[:, :],
+        types.i4[:, :],
+        types.i4[:, :],
+        types.i4,
+        types.i4,
+        types.i4,
+        types.i4,
+        types.i4,
+        types.i4,
+        types.NumPyRandomGeneratorType("NumPyRandomGeneratorType"),
+    ),
+    parallel=True,
 )
 def fill_montecarlo_grid(
     X0,
@@ -950,7 +1028,7 @@ def fill_montecarlo_grid(
     prng,
 ):
     records = np.zeros((nyears, J.TOTAL_SIZE), dtype=np.float64)
-    for i in range(n_iters):
+    for _ in prange(n_iters):
         res = grow(
             X0,
             nyears=nyears,
@@ -1014,7 +1092,6 @@ def phase_breed(
     return sdc
 
 
-@njit
 def coef_self_modification(
     coef_diffusion,
     coef_breed,

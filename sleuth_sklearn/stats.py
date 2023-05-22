@@ -1,10 +1,11 @@
 import numpy as np
 import sleuth_sklearn.labeling as sl
 
-from numba import jit_module
+from numba import njit, types
 from sleuth_sklearn.indices import J
 
 
+@njit
 def compute_stats(urban, slope):
     # Assuming binarized urban raster (0/1)
     area = urban.sum()
@@ -33,19 +34,22 @@ def compute_stats(urban, slope):
 
     # Returns a dict of statistics
     # Seems pop and area are the same in orginal SLEUTH code
-    return (
-        edges,
-        nclusters,
-        area,
-        xmean,
-        ymean,
-        avg_slope,
-        rad,
-        mean_cluster_size,
-        percent_urban,
+    return np.array(
+        [
+            edges,
+            nclusters,
+            area,
+            xmean,
+            ymean,
+            avg_slope,
+            rad,
+            mean_cluster_size,
+            percent_urban,
+        ]
     )
 
 
+@njit(types.i4(types.b1[:, :]))
 def count_edges(arr):
     s = 0
     for i in range(arr.shape[0]):
@@ -60,6 +64,7 @@ def count_edges(arr):
     return s
 
 
+@njit
 def evaluate_records(
     records,
     years,
@@ -100,6 +105,3 @@ def evaluate_records(
     # Optimal metric
     osm = np.prod(osm_metrics) * compare
     return osm
-
-
-jit_module(nopython=True, cache=True)
