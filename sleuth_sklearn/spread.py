@@ -611,16 +611,16 @@ def phase5(
 
     # Search for nearest road, and select only if road is close enough
     dists = np.empty(len(coords))
-    for idx, (i, j) in enumerate(coords):
-        dists[idx] = grd_roads_dist[i, j]
+    for a, (b, c) in enumerate(coords):
+        dists[a] = grd_roads_dist[b, c]
 
     coords = coords[dists < max_dist]
 
     road_i = np.empty(len(coords), dtype=np.int32)
     road_j = np.empty(len(coords), dtype=np.int32)
-    for idx, (i, j) in enumerate(coords):
-        road_i[idx] = grd_road_i[i, j]
-        road_j[idx] = grd_road_j[i, j]
+    for a, (b, c) in enumerate(coords):
+        road_i[a] = grd_road_i[b, c]
+        road_j[a] = grd_road_j[b, c]
 
     rcoords = np.column_stack((road_i, road_j))
 

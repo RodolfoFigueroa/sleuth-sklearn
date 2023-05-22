@@ -1,9 +1,9 @@
 import numpy as np
 
-from numba import njit
+from numba import njit, types
 
 
-@njit
+@njit(types.Tuple((types.i4[:, :], types.i4))(types.b1[:, :]))
 def hoshen_kopelman(matrix):
     matrix = matrix.copy()
     matrix = matrix.astype(np.int32)

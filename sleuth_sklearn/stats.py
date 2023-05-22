@@ -5,7 +5,22 @@ from numba import njit, types
 from sleuth_sklearn.indices import J
 
 
-@njit
+@njit(types.i4(types.b1[:, :]))
+def count_edges(arr):
+    s = 0
+    for i in range(arr.shape[0]):
+        for j in range(arr.shape[1]):
+            a = -4 * arr[i, j]
+            b = arr[i - 1, j] if i - 1 >= 0 else 0
+            c = arr[i + 1, j] if i + 1 < arr.shape[0] else 0
+            d = arr[i, j - 1] if j - 1 >= 0 else 0
+            e = arr[i, j + 1] if j + 1 < arr.shape[1] else 0
+            tot = a + b + c + d + e
+            s += tot < 0
+    return s
+
+
+@njit(types.f8[:](types.b1[:, :], types.i4[:, :]))
 def compute_stats(urban, slope):
     # Assuming binarized urban raster (0/1)
     area = urban.sum()
@@ -49,22 +64,7 @@ def compute_stats(urban, slope):
     )
 
 
-@njit(types.i4(types.b1[:, :]))
-def count_edges(arr):
-    s = 0
-    for i in range(arr.shape[0]):
-        for j in range(arr.shape[1]):
-            a = -4 * arr[i, j]
-            b = arr[i - 1, j] if i - 1 >= 0 else 0
-            c = arr[i + 1, j] if i + 1 < arr.shape[0] else 0
-            d = arr[i, j - 1] if j - 1 >= 0 else 0
-            e = arr[i, j + 1] if j + 1 < arr.shape[1] else 0
-            tot = a + b + c + d + e
-            s += tot < 0
-    return s
-
-
-@njit
+@njit(types.f8(types.f8[:, :], types.i4[:], types.f8[:, :]))
 def evaluate_records(
     records,
     years,
