@@ -7,6 +7,7 @@ def generate_grid(p_min, p_max, n_p=5):
         return np.array([p_min])
 
     assert p_min <= p_max
+
     delta = p_max - p_min
     if delta == 0:
         return [p_min]

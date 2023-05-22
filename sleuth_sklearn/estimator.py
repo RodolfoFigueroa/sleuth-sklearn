@@ -154,30 +154,30 @@ class SLEUTH(BaseEstimator):
         self.years_ = y
         self.calibration_stats_ = calculate_initial_stats(X, y, self.grid_slope)
 
-        param_grid = dict(
-            diffusion=su.generate_grid(
-                *self.coef_range_diffusion, self.n_refinement_splits
-            ),
-            breed=su.generate_grid(*self.coef_range_breed, self.n_refinement_splits),
-            spread=su.generate_grid(*self.coef_range_spread, self.n_refinement_splits),
-            slope=su.generate_grid(*self.coef_range_slope, self.n_refinement_splits),
-            road=su.generate_grid(*self.coef_range_slope, self.n_refinement_splits),
+        current_grid = np.array(
+            [
+                su.generate_grid(*self.coef_range_diffusion, self.n_refinement_splits),
+                su.generate_grid(*self.coef_range_breed, self.n_refinement_splits),
+                su.generate_grid(*self.coef_range_spread, self.n_refinement_splits),
+                su.generate_grid(*self.coef_range_slope, self.n_refinement_splits),
+                su.generate_grid(*self.coef_range_road, self.n_refinement_splits),
+            ]
         )
 
-        self.param_grids_ = []
+        self.param_grids_ = np.zeros(
+            (self.n_refinement_iters, 5, self.n_refinement_splits)
+        )
+        self.osm_ = {}
 
         for refinement_iter in range(self.n_refinement_iters):
             # Prevent searching over the same grid
             for grid in self.param_grids_:
-                if grid == param_grid:
+                if (grid == current_grid).all():
                     break
 
-            self.param_grids_.append(param_grid)
-            self.osm_ = {}
+            self.param_grids_[refinement_iter] = grid
 
-            combs = np.array(
-                list(itertools.product(*param_grid.values())), dtype=np.int32
-            )
+            combs = np.array(list(itertools.product(*current_grid)), dtype=np.int32)
             osm = evaluate_combinations(
                 X[0],
                 combs,
@@ -204,18 +204,15 @@ class SLEUTH(BaseEstimator):
                 [x[0] for x in scores_sorted[: self.n_refinement_winners]]
             )
 
-            new_param_grid = {}
-            for i, field in enumerate(
-                ["diffusion", "breed", "spread", "slope", "road"]
-            ):
+            new_param_grid = np.zeros((5, self.n_refinement_splits), dtype=np.int32)
+            for i in range(5):
                 c_min = top_params[:, i].min()
                 c_max = top_params[:, i].max()
-                new_param_grid[field] = su.get_new_range(
-                    param_grid[field], c_min, c_max, self.n_refinement_splits
+                new_param_grid[i] = su.get_new_range(
+                    current_grid[i], c_min, c_max, self.n_refinement_splits
                 )
 
-            self.param_grids_.append(new_param_grid)
-            param_grid = new_param_grid
+            current_grid = new_param_grid
 
         final_params = max(self.osm_, key=self.osm_.get)
         self.coef_diffusion_ = final_params[0]
