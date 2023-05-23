@@ -5,8 +5,9 @@ import sleuth_sklearn.spread as sp
 import sleuth_sklearn.stats as st
 import sleuth_sklearn.utils as su
 
-from numba import njit, types
+from numba import njit, typed, types
 from sklearn.base import BaseEstimator
+from sklearn.utils import check_random_state
 from sleuth_sklearn.indices import J
 
 
@@ -23,7 +24,7 @@ from sleuth_sklearn.indices import J
         types.i4[:, :],
         types.i4[:, :],
         types.i4,
-        types.NumPyRandomGeneratorType("prng"),
+        types.ListType(types.NumPyRandomGeneratorType("prng")),
         types.f8[:, :],
     ),
 )
@@ -39,7 +40,7 @@ def evaluate_combinations(
     grid_roads_i,
     grid_roads_j,
     crit_slope,
-    prng,
+    prngs,
     calibration_stats,
 ):
     nyears = years[-1] - years[0] + 1
@@ -66,7 +67,7 @@ def evaluate_combinations(
             coef_slope=c_slope,
             coef_road=c_road,
             crit_slope=crit_slope,
-            prng=prng,
+            prngs=prngs[i * n_iters : (i + 1) * n_iters],
         )
 
         out[i] = st.evaluate_records(
@@ -178,6 +179,16 @@ class SLEUTH(BaseEstimator):
             self.param_grids_[refinement_iter] = grid
 
             combs = np.array(list(itertools.product(*current_grid)), dtype=np.int32)
+
+            prngs = typed.List(
+                [
+                    np.random.Generator(np.random.SFC64(x))
+                    for x in self.random_state_.integers(
+                        0, 1e8, size=len(combs) * self.n_iters
+                    )
+                ]
+            )
+
             osm = evaluate_combinations(
                 X[0],
                 combs,
@@ -189,9 +200,9 @@ class SLEUTH(BaseEstimator):
                 grid_roads_i=self.grid_roads_i,
                 grid_roads_j=self.grid_roads_j,
                 crit_slope=self.crit_slope,
-                prng=self.random_state_,
                 years=self.years_,
                 calibration_stats=self.calibration_stats_,
+                prngs=prngs,
             )
 
             for key, value in zip(combs, osm):

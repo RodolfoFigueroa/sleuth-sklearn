@@ -5,8 +5,8 @@ from numba import generated_jit, njit, prange, types
 from sleuth_sklearn.indices import J
 
 
-@njit
-def slope_weight(slope, slp_res, critical_slp):
+@njit(types.f8[:](types.i4[:], types.f8, types.f8))
+def slope_weight_1d(slope, slp_res, critical_slp):
     """Calculate slope resistance weights.
 
     Calculates the slope resistance for slope values. The slope
@@ -29,7 +29,7 @@ def slope_weight(slope, slp_res, critical_slp):
 
     Parameters
     ----------
-    slope : float
+    slope : np.array
         Slope values for which to calculate resistance.
     slp_res : float
         Coefficient governing the shape of the resistance function.
@@ -47,7 +47,51 @@ def slope_weight(slope, slp_res, critical_slp):
     exp = 2 * slp_res / 100
     slope_w = np.where(slope >= critical_slp, 0, val)
     slope_w = 1.0 - slope_w**exp
+    return slope_w
 
+
+@njit(types.f8[:, :](types.i4[:, :], types.f8, types.f8))
+def slope_weight_2d(slope, slp_res, critical_slp):
+    """Calculate slope resistance weights.
+
+    Calculates the slope resistance for slope values. The slope
+    resistance is a monotonous increasing function of slope boundend in 0-1
+    which specific shape is controlled by slp_res coefficient and the
+    slope critical value.
+
+    It is interpreted as the probability of resisting urbanization due to
+    a steep slope.
+
+    The function is:
+
+    min(1, 1 - (crit_slp - slp)/crit_slp ** 2(slp_res/MAX_SLP_RES))
+
+    Note: The max exponent is 2, which bounds the growth rate of
+    rejection probability. A more generall sigmoid function may be
+    useful here. Another advantage of a more general sigmoid is that
+    the effect of the critical cutoff can be handled by a shape parameter,
+    which is differentiable.
+
+    Parameters
+    ----------
+    slope : np.array
+        Slope values for which to calculate resistance.
+    slp_res : float
+        Coefficient governing the shape of the resistance function.
+    critical_slp : float
+        Critical slope value above which all weights are one.
+
+    Returns
+    -------
+    slope_w: np.array
+        1D array of slope weights.
+
+    """
+
+    val = (critical_slp - slope) / critical_slp
+    exp = 2 * slp_res / 100
+    slope_w = np.where(slope >= critical_slp, 0, val)
+    slope_w = 1.0 - slope_w**exp
     return slope_w
 
 
@@ -375,7 +419,7 @@ def urbanizable(
 
     # Apply slope restrictions
     # sweights give the probability of rejecting urbanization
-    sweights = slope_weight(slope, coef_slope, crit_slope)
+    sweights = slope_weight_1d(slope, coef_slope, crit_slope)
     slp_mask = prng.random(size=len(sweights)) >= sweights
     # urb_attempt.slope_failure += (~slp_mask).sum()
 
@@ -931,7 +975,7 @@ def grow(
 
     # Precalculate/reset slope weighs
     # This can change due to self-modification during growth.
-    sweights = 1 - slope_weight(grid_slope, coef_slope, crit_slope)
+    sweights = 1 - slope_weight_2d(grid_slope, coef_slope, crit_slope)
 
     for i in range(nyears):
         # Apply CA rules for current year
@@ -1005,7 +1049,7 @@ def grow(
         types.i4,
         types.i4,
         types.i4,
-        types.NumPyRandomGeneratorType("NumPyRandomGeneratorType"),
+        types.ListType(types.NumPyRandomGeneratorType("NumPyRandomGeneratorType")),
     ),
     parallel=True,
 )
@@ -1025,10 +1069,11 @@ def fill_montecarlo_grid(
     coef_slope,
     coef_road,
     crit_slope,
-    prng,
+    prngs,
 ):
     records = np.zeros((nyears, J.TOTAL_SIZE), dtype=np.float64)
-    for _ in prange(n_iters):
+
+    for iter in prange(n_iters):
         res = grow(
             X0,
             nyears=nyears,
@@ -1044,7 +1089,7 @@ def fill_montecarlo_grid(
             coef_slope=coef_slope,
             coef_road=coef_road,
             crit_slope=crit_slope,
-            prng=prng,
+            prng=prngs[iter],
         )
         new_records = res[1]
         records += new_records
