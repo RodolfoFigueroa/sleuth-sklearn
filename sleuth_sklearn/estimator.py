@@ -7,7 +7,6 @@ import sleuth_sklearn.utils as su
 
 from numba import njit, typed, types
 from sklearn.base import BaseEstimator
-from sklearn.utils import check_random_state
 from sleuth_sklearn.indices import J
 
 
@@ -27,6 +26,7 @@ from sleuth_sklearn.indices import J
         types.ListType(types.NumPyRandomGeneratorType("prng")),
         types.f8[:, :],
     ),
+    cache=True
 )
 def evaluate_combinations(
     X0,
@@ -70,13 +70,11 @@ def evaluate_combinations(
             prngs=prngs[i * n_iters : (i + 1) * n_iters],
         )
 
-        out[i] = st.evaluate_records(
-            records, years=years, calibration_stats=calibration_stats
-        )
+        out[i] = st.evaluate_records(records, years, calibration_stats)
     return out
 
 
-@njit(types.f8[:, :](types.b1[:, :, :], types.i4[:], types.i4[:, :]))
+@njit(types.f8[:, :](types.b1[:, :, :], types.i4[:], types.i4[:, :]), cache=True)
 def calculate_initial_stats(X, y, grid_slope):
     calibration_stats = np.zeros((len(y), J.TOTAL_SIZE), dtype=np.float64)
 

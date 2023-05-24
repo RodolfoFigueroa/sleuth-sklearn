@@ -5,7 +5,7 @@ from numba import njit, types
 from sleuth_sklearn.indices import J
 
 
-@njit(types.i4(types.b1[:, :]))
+@njit(types.i4(types.b1[:, :]), cache=True)
 def count_edges(arr):
     s = 0
     for i in range(arr.shape[0]):
@@ -20,7 +20,7 @@ def count_edges(arr):
     return s
 
 
-@njit(types.f8[:](types.b1[:, :], types.i4[:, :]))
+@njit(types.f8[:](types.b1[:, :], types.i4[:, :]), cache=True)
 def compute_stats(urban, slope):
     # Assuming binarized urban raster (0/1)
     area = urban.sum()
@@ -64,7 +64,7 @@ def compute_stats(urban, slope):
     )
 
 
-@njit(types.f8(types.f8[:, :], types.i4[:], types.f8[:, :]))
+@njit(types.f8(types.f8[:, :], types.i4[:], types.f8[:, :]), cache=True)
 def evaluate_records(
     records,
     years,

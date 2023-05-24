@@ -3,7 +3,7 @@ import numpy as np
 from numba import njit, types
 
 
-@njit(types.Tuple((types.i4[:, :], types.i4))(types.b1[:, :]))
+@njit(types.Tuple((types.i4[:, :], types.i4))(types.b1[:, :]), cache=True)
 def hoshen_kopelman(matrix):
     matrix = matrix.copy()
     matrix = matrix.astype(np.int32)

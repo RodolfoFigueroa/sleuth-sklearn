@@ -5,7 +5,7 @@ from numba import generated_jit, njit, prange, types
 from sleuth_sklearn.indices import J
 
 
-@njit(types.f8[:](types.i4[:], types.f8, types.f8))
+@njit(types.f8[:](types.i4[:], types.f8, types.f8), cache=True)
 def slope_weight_1d(slope, slp_res, critical_slp):
     """Calculate slope resistance weights.
 
@@ -50,7 +50,7 @@ def slope_weight_1d(slope, slp_res, critical_slp):
     return slope_w
 
 
-@njit(types.f8[:, :](types.i4[:, :], types.f8, types.f8))
+@njit(types.f8[:, :](types.i4[:, :], types.f8, types.f8), cache=True)
 def slope_weight_2d(slope, slp_res, critical_slp):
     """Calculate slope resistance weights.
 
@@ -95,8 +95,9 @@ def slope_weight_2d(slope, slp_res, critical_slp):
     return slope_w
 
 
-@njit(types.i4[:, :](types.b1[:, :]))
+@njit(types.i4[:, :](types.b1[:, :]), cache=True)
 def count_neighbors(Z):
+    Z = Z.astype(np.int32)
     N = np.zeros(Z.shape, dtype=np.int32)
     N[1:-1, 1:-1] += (
         Z[:-2, :-2]
@@ -119,13 +120,14 @@ def count_neighbors(Z):
         types.i4,
         types.NumPyRandomGeneratorType("prng"),
         types.f8[:, :],
-    )
+    ),
+    cache=True,
 )
 def phase1n3_new(
-    grd_Z,
-    grd_delta,
-    # grd_slope,
-    # grd_excluded,
+    grid_Z,
+    grid_delta,
+    # grid_slope,
+    # grid_excluded,
     coef_diffusion,
     coef_breed,
     # coef_slope,
@@ -144,13 +146,13 @@ def phase1n3_new(
 
     Parameters
     ----------
-    grd_Z : np.array
+    grid_Z : np.array
         Urban Z grid, stores urbanization from previous year.
-    grd_delta : np.array
+    grid_delta : np.array
         Urban delta grid, stores new urbanization for the simulated year.
-    grd_slope : np.array
+    grid_slope : np.array
         Array with slope values.
-    grd_excluded : np.array
+    grid_excluded : np.array
         Array wich labels excluded regions where urbanization is not allowed.
     coef_diffusion : float
         Diffusion coefficient.
@@ -174,7 +176,7 @@ def phase1n3_new(
 
     """
 
-    nrows, ncols = grd_Z.shape
+    nrows, ncols = grid_Z.shape
 
     # Get urbanization probability per pixel
     diag = np.sqrt(nrows**2 + ncols**2)
@@ -184,11 +186,11 @@ def phase1n3_new(
 
     # Apply urbanization test to all pixels
     # TODO: ignore borders
-    mask = prng.random(size=grd_delta.shape) < p_diff
+    mask = prng.random(size=grid_delta.shape) < p_diff
     sng = mask.sum()
 
     # Update delta grid
-    grd_delta = np.logical_or(grd_delta, mask)
+    grid_delta = np.logical_or(grid_delta, mask)
 
     # For PHASE 2
     # kernel = np.array([[1,  1, 1],
@@ -197,11 +199,11 @@ def phase1n3_new(
 
     # Find number of neighbors in delta grid
     # n_nbrs = convolve(
-    #     grd_delta,
+    #     grid_delta,
     #     kernel,
     #     mode='constant'
     # )
-    n_nbrs = count_neighbors(grd_delta)
+    n_nbrs = count_neighbors(grid_delta)
 
     # Apply urbanization test
     # Pixels that past the test attempt urbanization
@@ -212,13 +214,13 @@ def phase1n3_new(
     p_urb = (-1) ** (n_nbrs + 1) * (p_breed / 4.0 - 1) ** n_nbrs + 1
 
     # Apply random test
-    mask = prng.random(size=grd_delta.shape) < p_urb
+    mask = prng.random(size=grid_delta.shape) < p_urb
     sdc = mask.sum()
 
     # Update delta grid
-    grd_delta = np.logical_or(grd_delta, mask)
+    grid_delta = np.logical_or(grid_delta, mask)
 
-    return sng, sdc, grd_delta
+    return sng, sdc, grid_delta
 
 
 @njit(
@@ -228,13 +230,14 @@ def phase1n3_new(
         types.i4,
         types.NumPyRandomGeneratorType("prng"),
         types.f8[:, :],
-    )
+    ),
+    cache=True,
 )
 def phase4_new(
-    grd_Z,
-    grd_delta,
-    # grd_slope,
-    # grd_excluded,
+    grid_Z,
+    grid_delta,
+    # grid_slope,
+    # grid_excluded,
     coef_spread,
     # coef_slope,
     # crit_slope,
@@ -251,13 +254,13 @@ def phase4_new(
 
     Parameters
     ----------
-    grd_Z : np.array
+    grid_Z : np.array
         Urban Z grid, stores urbanization from previous year.
-    grd_delta : np.array
+    grid_delta : np.array
         Urban delta grid, stores new urbanization for the simulated year.
-    grd_slope : np.array
+    grid_slope : np.array
         Array with slope values.
-    grd_excluded : np.array
+    grid_excluded : np.array
         Array wich labels excluded regions where urbanization is not allowed.
     coef_spread : float
         Spread coefficient.
@@ -303,14 +306,14 @@ def phase4_new(
 
     # Get array with number of neighbors for each pixel.
     # n_nbrs = convolve(
-    #     grd_Z,
+    #     grid_Z,
     #     kernel,
     #     mode='constant'
     # )
-    n_nbrs = count_neighbors(grd_Z)
+    n_nbrs = count_neighbors(grid_Z)
 
     # Spread centers are urban pixels with 2 or more neighbors
-    cluster_labels = np.logical_and(n_nbrs >= 2, grd_Z)
+    cluster_labels = np.logical_and(n_nbrs >= 2, grid_Z)
 
     # Count cluster neighbors per pixel
     # n_nbrs = convolve(
@@ -329,16 +332,16 @@ def phase4_new(
     p_urb = (-1) ** (n_nbrs + 1) * (p_sprd / 8.0 - 1) ** n_nbrs + 1
 
     # Apply random test
-    mask = prng.random(size=grd_delta.shape) < p_urb
+    mask = prng.random(size=grid_delta.shape) < p_urb
 
     # Update delta grid
-    new_delta = np.logical_or(grd_delta, mask)
+    grid_delta = np.logical_or(grid_delta, mask)
 
     # Get urbanize pixels in this phase
     # Note: this double counts already urbanized pixels.
     og = mask.sum()
 
-    return og, new_delta
+    return og, grid_delta
 
 
 @njit(
@@ -351,14 +354,15 @@ def phase4_new(
         types.i4,
         types.i4,
         types.NumPyRandomGeneratorType("prng"),
-    )
+    ),
+    cache=True,
 )
 def urbanizable(
     coords,
-    grd_Z,
-    grd_delta,
-    grd_slope,
-    grd_excluded,
+    grid_Z,
+    grid_delta,
+    grid_slope,
+    grid_excluded,
     coef_slope,
     crit_slope,
     prng,
@@ -373,13 +377,13 @@ def urbanizable(
     ----------
     coords : np.array
         Numpy array of pair of (i, j) coordinates of candidate pixels.
-    grd_Z: np.array
+    grid_Z: np.array
         2D binary array with original urbanization for the current step.
-    grd_delta: np.array
+    grid_delta: np.array
         2D binary array where new urbanization is temporary created.
-    grd_slope: np.array
+    grid_slope: np.array
         2D int array with slope values normalized to 1-100 range.
-    grd_excluded: np.array
+    grid_excluded: np.array
         2D int array with excluded zones. Values are 100*probability of
         rejecting urbanization. 0 is always available, over 100 means
         urbanization  is always rejected.
@@ -406,10 +410,10 @@ def urbanizable(
     delta = np.zeros(len(coords), dtype=np.bool_)
     slope = np.zeros(len(coords), dtype=np.int32)
     for a, (b, c) in enumerate(coords):
-        z[a] = grd_Z[b, c]
-        delta[a] = grd_delta[b, c]
-        slope[a] = grd_slope[b, c]
-    # excld = grd_excluded[ic, jc]
+        z[a] = grid_Z[b, c]
+        delta[a] = grid_delta[b, c]
+        slope[a] = grid_slope[b, c]
+    # excld = grid_excluded[ic, jc]
 
     # Check if not already urbanized in original and delta grid
     z_mask = np.invert(z)
@@ -446,15 +450,16 @@ def urbanizable(
         types.i4,
         types.i4,
         types.NumPyRandomGeneratorType("prng"),
-    )
+    ),
+    cache=True,
 )
 def urbanizable_neighbors(
     i,
     j,
-    grd_Z,
-    grd_delta,
-    grd_slope,
-    grd_excluded,
+    grid_Z,
+    grid_delta,
+    grid_slope,
+    grid_excluded,
     coef_slope,
     crit_slope,
     prng,
@@ -471,13 +476,13 @@ def urbanizable_neighbors(
         Row coordinate of center pixel.
     j : int
         Column coordinate of center pixel.
-    grd_Z: np.array
+    grid_Z: np.array
         2D binary array with original urbanization for the current step.
-    grd_delta: np.array
+    grid_delta: np.array
         2D binary array where new urbanization is temporary created.
-    grd_slope: np.array
+    grid_slope: np.array
         2D int array with slope values normalized to 1-100 range.
-    grd_excluded: np.array
+    grid_excluded: np.array
         2D int array with excluded zones. Values are 100*probability of
         rejecting urbanization. 0 is always available, over 100 means
         urbanization  is always rejected.
@@ -510,10 +515,10 @@ def urbanizable_neighbors(
     # Obtain urbanizable neighbors
     mask = urbanizable(
         nlist,
-        grd_Z,
-        grd_delta,
-        grd_slope,
-        grd_excluded,
+        grid_Z,
+        grid_delta,
+        grid_slope,
+        grid_excluded,
         coef_slope,
         crit_slope,
         prng,
@@ -539,17 +544,18 @@ def urbanizable_neighbors(
         types.i4,
         types.i4,
         types.NumPyRandomGeneratorType("prng"),
-    )
+    ),
+    cache=True,
 )
 def phase5(
-    grd_Z,
-    grd_delta,
-    grd_slope,
-    grd_excluded,
-    grd_roads,
-    grd_roads_dist,
-    grd_road_i,
-    grd_road_j,
+    grid_Z,
+    grid_delta,
+    grid_slope,
+    grid_excluded,
+    grid_roads,
+    grid_roads_dist,
+    grid_roads_i,
+    grid_roads_j,
     coef_road,
     coef_diffusion,
     coef_breed,
@@ -571,21 +577,21 @@ def phase5(
 
     Parameters
     ----------
-    grd_Z : np.array
+    grid_Z : np.array
         Urban Z grid, stores urbanization from previous year.
-    grd_delta : np.array
+    grid_delta : np.array
         Urban delta grid, stores new urbanization for the simulated year.
-    grd_slope : np.array
+    grid_slope : np.array
         Array with slope values.
-    grd_excluded : np.array
+    grid_excluded : np.array
         Array wich labels excluded regions where urbanization is not allowed.
-    grd_roads : np.array
+    grid_roads : np.array
         Array with roads labeled by their importance normalized between ??-??.
-    grd_road_dist : np.array
+    grd_roads_dist : np.array
         Array with each pixels distance to the closest road.
-    grd_road_i : np.array
+    grid_roads_i : np.array
         Array with the i coordinate of the closest road.
-    grd_road_j : np.array
+    grid_roads_j : np.array
         Array with the j coordinate of the closest road.
     coef_road : float
         Road coefficient.
@@ -616,7 +622,7 @@ def phase5(
     # calculate tha maximum distance to search for a road
     # this is the chebyshev distance and is precomputed in grid
     # maxed at ~ 1/32 image perimeter
-    nrows, ncols = grd_delta.shape
+    nrows, ncols = grid_delta.shape
     max_dist = int(coef_road / 100 * (nrows + ncols) / 16.0)
     # number of neighbors up to distance max_dist
     # useless in our code, but original SLEUTH uses this to
@@ -645,7 +651,7 @@ def phase5(
     # we may return the whole set of candidates.
 
     # Coordinates of new growth
-    w = (grd_delta > 0).nonzero()
+    w = (grid_delta > 0).nonzero()
     coords = np.stack((w[0], w[1])).T
     # Select n=breed growth candidates
 
@@ -656,15 +662,15 @@ def phase5(
     # Search for nearest road, and select only if road is close enough
     dists = np.empty(len(coords))
     for a, (b, c) in enumerate(coords):
-        dists[a] = grd_roads_dist[b, c]
+        dists[a] = grid_roads_dist[b, c]
 
     coords = coords[dists < max_dist]
 
     road_i = np.empty(len(coords), dtype=np.int32)
     road_j = np.empty(len(coords), dtype=np.int32)
     for a, (b, c) in enumerate(coords):
-        road_i[a] = grd_road_i[b, c]
-        road_j[a] = grd_road_j[b, c]
+        road_i[a] = grid_roads_i[b, c]
+        road_j[a] = grid_roads_j[b, c]
 
     rcoords = np.column_stack((road_i, road_j))
 
@@ -699,7 +705,7 @@ def phase5(
             nbrs = rc + nlist
             flat_idx = np.zeros(len(nbrs), dtype=np.bool_)
             for a, (b, c) in enumerate(nbrs):
-                flat_idx[a] = grd_roads[b, c] > 0
+                flat_idx[a] = grid_roads[b, c] > 0
 
             nbrs = nbrs[flat_idx]
             # TODO: there is a bug when a road is a single pixel and has no neighbors
@@ -714,16 +720,16 @@ def phase5(
     bottom = prng.integers(0, 100)
     mask = np.zeros(len(new_sites), dtype=np.bool_)
     for a, (b, c) in enumerate(new_sites):
-        mask[a] = bottom < grd_roads[b, c]
+        mask[a] = bottom < grid_roads[b, c]
     new_sites = new_sites[mask]
 
     # Attempt to urbanize
     mask = urbanizable(
         new_sites,
-        grd_Z,
-        grd_delta,
-        grd_slope,
-        grd_excluded,
+        grid_Z,
+        grid_delta,
+        grid_slope,
+        grid_excluded,
         coef_slope,
         crit_slope,
         prng,
@@ -734,7 +740,7 @@ def phase5(
     rt = len(new_sites)
     # Update available pixels in delta grid
     for a, b in new_sites:
-        grd_delta[a, b] = 1
+        grid_delta[a, b] = 1
 
     # Attempt to create new urban centers, urbanize 2 neighbors
     for i, j in new_sites:
@@ -742,10 +748,10 @@ def phase5(
         ncoords, mask = urbanizable_neighbors(
             i,
             j,
-            grd_Z,
-            grd_delta,
-            grd_slope,
-            grd_excluded,
+            grid_Z,
+            grid_delta,
+            grid_slope,
+            grid_excluded,
             coef_slope,
             crit_slope,
             prng,
@@ -757,7 +763,7 @@ def phase5(
 
         # Update delta grid with values for phase 5
         for a, b in ncoords:
-            grd_delta[a, b] = 1
+            grid_delta[a, b] = 1
 
     return rt
 
@@ -780,15 +786,16 @@ def phase5(
         types.NumPyRandomGeneratorType("prng"),
         types.f8[:, :],
     ),
+    cache=True,
 )
 def spread(
-    grd_Z,
-    grd_slope,
-    grd_excluded,
-    grd_roads,
-    grd_roads_dist,
-    grd_road_i,
-    grd_road_j,
+    grid_Z,
+    grid_slope,
+    grid_excluded,
+    grid_roads,
+    grid_roads_dist,
+    grid_roads_i,
+    grid_roads_j,
     coef_diffusion,
     coef_breed,
     coef_spread,
@@ -808,19 +815,19 @@ def spread(
 
     Parameters
     ----------
-    grd_Z : np.array
+    grid_Z : np.array
         Urban Z grid, stores urbanization from previous year.
-    grd_slope : np.array
+    grid_slope : np.array
         Array with slope values.
-    grd_excluded : np.array
+    grid_excluded : np.array
         Array wich labels excluded regions where urbanization is not allowed.
-    grd_roads : np.array
+    grid_roads : np.array
         Array with roads labeled by their importance normalized between ??-??.
-    grd_road_dist : np.array
+    grd_roads_dist : np.array
         Array with each pixels distance to the closest road.
-    grd_road_i : np.array
+    grid_roads_i : np.array
         Array with the i coordinate of the closest road.
-    grd_road_j : np.array
+    grid_roads_j : np.array
         Array with the j coordinate of the closest road.
     coef_diffusion : float
         Diffusion coefficient.
@@ -856,16 +863,16 @@ def spread(
 
     # Initialize delta grid to store temporal urbanization.
     # TODO: zero grid instead of creating
-    grd_delta = np.zeros(grd_Z.shape, dtype=np.bool_)
+    grid_delta = np.zeros(grid_Z.shape, dtype=np.bool_)
 
     # Slope coef and crit are constant during a single step
     # TODO:Precalculate all slope weights?
 
-    sng, sdc, grd_delta = phase1n3_new(
-        grd_Z,
-        grd_delta,
-        # grd_slope,
-        # grd_excluded,
+    sng, sdc, grid_delta = phase1n3_new(
+        grid_Z,
+        grid_delta,
+        # grid_slope,
+        # grid_excluded,
         coef_diffusion,
         coef_breed,
         # coef_slope,
@@ -875,11 +882,11 @@ def spread(
         sweights,
     )
 
-    og, grd_delta = phase4_new(
-        grd_Z,
-        grd_delta,
-        # grd_slope,
-        # grd_excluded,
+    og, grid_delta = phase4_new(
+        grid_Z,
+        grid_delta,
+        # grid_slope,
+        # grid_excluded,
         coef_spread,
         # coef_slope,
         # crit_slope,
@@ -889,14 +896,14 @@ def spread(
     )
 
     rt = phase5(
-        grd_Z=grd_Z,
-        grd_delta=grd_delta,
-        grd_slope=grd_slope,
-        grd_excluded=grd_excluded,
-        grd_roads=grd_roads,
-        grd_roads_dist=grd_roads_dist,
-        grd_road_i=grd_road_i,
-        grd_road_j=grd_road_j,
+        grid_Z=grid_Z,
+        grid_delta=grid_delta,
+        grid_slope=grid_slope,
+        grid_excluded=grid_excluded,
+        grid_roads=grid_roads,
+        grid_roads_dist=grid_roads_dist,
+        grid_roads_i=grid_roads_i,
+        grid_roads_j=grid_roads_j,
         coef_road=coef_road,
         coef_diffusion=coef_diffusion,
         coef_breed=coef_breed,
@@ -912,20 +919,20 @@ def spread(
     # in the delta grid
     # excld value is the 100*probability of rejecting urbanization
     # TODO: implement as boolean operation without indexing
-    excld_mask = (prng.random(size=grd_delta.shape) * 100) < grd_excluded
+    excld_mask = (prng.random(size=grid_delta.shape) * 100) < grid_excluded
     coords = excld_mask.nonzero()
     for a, b in zip(coords[0], coords[1]):
-        grd_delta[a, b] = 0
+        grid_delta[a, b] = 0
 
     # Urbanize in Z array for accumulated urbanization.
     # TODO: Try to avoid indexing, implement as boolean operation.
-    mask = grd_delta > 0
+    mask = grid_delta > 0
     coords = mask.nonzero()
     for a, b in zip(coords[0], coords[1]):
-        grd_Z[a, b] = grd_delta[a, b]
-    # avg_slope = grd_slope[mask].mean()
+        grid_Z[a, b] = grid_delta[a, b]
+    # avg_slope = grid_slope[mask].mean()
     num_growth_pix = mask.sum()
-    # pop = (grd_Z >= C.PHASE0G).sum()
+    # pop = (grid_Z >= C.PHASE0G).sum()
 
     return sng, sdc, og, rt, num_growth_pix
 
@@ -948,7 +955,7 @@ def spread(
         types.i4,
         types.NumPyRandomGeneratorType("NumPyRandomGeneratorType"),
     ),
-    cache=False,
+    cache=True,
 )
 def grow(
     seed_grid,
@@ -968,10 +975,10 @@ def grow(
     prng,
 ):
     grid_MC = np.zeros((nyears, *seed_grid.shape), dtype=np.int32)
-    records = np.zeros((nyears, J.TOTAL_SIZE), dtype=np.float64)
+    records = np.empty((nyears, J.TOTAL_SIZE), dtype=np.float64)
     # Initialize Z grid to the seed (first urban grid)
     # TODO: Zero grid instead of creating new one.
-    grd_Z = seed_grid.copy()
+    grid_Z = seed_grid.copy()
 
     # Precalculate/reset slope weighs
     # This can change due to self-modification during growth.
@@ -980,7 +987,7 @@ def grow(
     for i in range(nyears):
         # Apply CA rules for current year
         sng, sdc, og, rt, num_growth_pix = spread(
-            grd_Z,
+            grid_Z,
             grid_slope,
             grid_excluded,
             grid_roads,
@@ -1018,14 +1025,14 @@ def grow(
                 J.PERCENT_URBAN,
             ]
         )
-        records[i, idx_arr] = st.compute_stats(grd_Z, grid_slope)
+        records[i, idx_arr] = st.compute_stats(grid_Z, grid_slope)
 
         # Growth
         records[i, J.GROWTH_RATE] = 100.0 * num_growth_pix / records[i, J.POP]
 
         # Accumulate MC samples
         # TODO: avoid indexing making sure Z grid is at most 1.
-        coords = (grd_Z > 0).nonzero()
+        coords = (grid_Z > 0).nonzero()
         for a, b in zip(*coords):
             grid_MC[i, a, b] += 1
 
@@ -1052,6 +1059,7 @@ def grow(
         types.ListType(types.NumPyRandomGeneratorType("NumPyRandomGeneratorType")),
     ),
     parallel=True,
+    cache=True,
 )
 def fill_montecarlo_grid(
     X0,
@@ -1096,45 +1104,6 @@ def fill_montecarlo_grid(
     records /= n_iters
 
     return records
-
-
-def phase_spontaneous(grd_delta, p_diff, prng, sweights):
-    # Adjust probability with slope rejection
-    p_diff = sweights * p_diff
-
-    # Apply urbanization test to all pixels
-    mask = prng.random(size=grd_delta.shape) < p_diff
-    sng = mask.sum()
-
-    # Update delta grid
-    new_delta = np.logical_or(grd_delta, mask)
-    np.copyto(grd_delta, new_delta)
-
-    return sng
-
-
-def phase_breed(
-    grd_delta,
-    p_breed,
-    prng,
-    sweights,
-):
-    n_nbrs = count_neighbors(grd_delta)
-
-    # Adjust probability with slope rejection
-    p_breed = sweights * p_breed
-    # The probability of urbanization is then (see notes)
-    p_urb = (-1) ** (n_nbrs + 1) * (p_breed / 4.0 - 1) ** n_nbrs + 1
-
-    # Apply random test
-    mask = prng.random(size=grd_delta.shape) < p_urb
-    sdc = mask.sum()
-
-    # Update delta grid
-    new_delta = np.logical_or(grd_delta, mask)
-    np.copyto(grd_delta, new_delta)
-
-    return sdc
 
 
 def coef_self_modification(
@@ -1248,29 +1217,3 @@ def coef_self_modification(
             coef_spread = max(coef_spread, 1.0)
 
     return coef_diffusion, coef_breed, coef_spread, coef_slope, coef_road
-
-
-# def count_neighbors(Z):
-#     N = np.zeros(Z.shape, dtype=np.int8)
-#     print("Start:", N.shape)
-#     arrs = [
-#         Z[:-2, :-2],
-#         Z[:-2, 1:-1],
-#         Z[:-2, 2:],
-#         Z[1:-1, :-2],
-#         Z[1:-1, 2:],
-#         Z[2:, :-2],
-#         Z[2:, 1:-1],
-#         Z[2:, 2:]
-#     ]
-#     for i, arr in enumerate(arrs):
-#         print(i, arr.shape)
-#         print(type(arr))
-#         print("===")
-
-#     s = sum(arrs)
-#     sbak = Z[:-2, :-2] + Z[:-2, 1:-1] + Z[:-2, 2:]
-#     print(s.shape, sbak.shape, N[1:-1, 1:-1].shape)
-#     N[1:-1, 1:-1] += s
-
-#     return N
