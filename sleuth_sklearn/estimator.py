@@ -26,7 +26,7 @@ from sleuth_sklearn.indices import J
         types.ListType(types.NumPyRandomGeneratorType("prng")),
         types.f8[:, :],
     ),
-    cache=True
+    cache=True,
 )
 def evaluate_combinations(
     X0,
