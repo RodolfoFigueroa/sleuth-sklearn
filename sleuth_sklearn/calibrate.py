@@ -9,7 +9,7 @@ from sleuth_sklearn.utils import open_dataset
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "path",
+        "PATH",
         help="The path to the config file.",
         type=str
     )

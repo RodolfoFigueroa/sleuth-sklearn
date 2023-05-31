@@ -7,7 +7,7 @@ readme = "README.md"
 packages = [{include = "sleuth_sklearn"}]
 
 [tool.poetry.scripts]
-calibrate = "sleuth_sklearn.calibrate:main"
+sleuth-calibrate = "sleuth_sklearn.calibrate:main"
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.12"
