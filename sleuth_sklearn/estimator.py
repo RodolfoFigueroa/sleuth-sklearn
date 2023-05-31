@@ -1,4 +1,6 @@
 import itertools
+import multiprocessing
+import numba
 
 import numpy as np
 import sleuth_sklearn.spread as sp
@@ -67,7 +69,7 @@ def evaluate_combinations(
             coef_slope=c_slope,
             coef_road=c_road,
             crit_slope=crit_slope,
-            prngs=prngs[i * n_iters : (i + 1) * n_iters],
+            prngs=prngs,
         )
 
         out[i] = st.evaluate_records(records, years, calibration_stats)
@@ -118,6 +120,7 @@ class SLEUTH(BaseEstimator):
         grid_roads_j=np.empty(0),
         crit_slope=50,
         random_state=None,
+        n_jobs=-1
     ):
         self.n_iters = n_iters
 
@@ -141,15 +144,23 @@ class SLEUTH(BaseEstimator):
         self.crit_slope = crit_slope
 
         self.random_state = random_state
+        self.n_jobs = n_jobs
 
     def fit(self, X, y):
         X = np.array(X, dtype=bool)
         y = np.array(y)
         if X.shape[0] != y.shape[0]:
-            raise ValueError
+            raise ValueError("X and y don't have the same number of years.")
+        
+        if self.n_jobs == -1:
+            self.n_threads_ = 2 * multiprocessing.cpu_count()
+        else:
+            self.n_threads_ = self.n_jobs
+
+        numba.set_num_threads(self.n_threads_)
 
         # Set initial params
-        self.random_state_ = np.random.Generator(np.random.SFC64(self.random_state))
+        self.seed_sequence_ = np.random.SeedSequence(self.random_state)
         self.years_ = y
         self.calibration_stats_ = calculate_initial_stats(X, y, self.grid_slope)
 
@@ -178,12 +189,10 @@ class SLEUTH(BaseEstimator):
 
             combs = np.array(list(itertools.product(*current_grid)), dtype=np.int32)
 
-            prngs = typed.List(
+            self.prngs_ = typed.List(
                 [
                     np.random.Generator(np.random.SFC64(x))
-                    for x in self.random_state_.integers(
-                        0, 1e8, size=len(combs) * self.n_iters
-                    )
+                    for x in self.seed_sequence_.generate_state(self.n_iters)
                 ]
             )
 
@@ -200,7 +209,7 @@ class SLEUTH(BaseEstimator):
                 crit_slope=self.crit_slope,
                 years=self.years_,
                 calibration_stats=self.calibration_stats_,
-                prngs=prngs,
+                prngs=self.prngs_,
             )
 
             for key, value in zip(combs, osm):
