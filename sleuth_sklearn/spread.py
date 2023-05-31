@@ -1042,7 +1042,7 @@ def grow(
 @njit(
     types.f8[:, :](
         types.b1[:, :],
-        types.i8,  # nyears - Do NOT change
+        types.i8,  # nyears - DO NOT change to anything other than int
         types.i8,
         types.i4[:, :],
         types.i4[:, :],
