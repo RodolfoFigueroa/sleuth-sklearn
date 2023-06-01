@@ -1,6 +1,8 @@
 import argparse
 import toml
 
+import pandas as pd
+
 from pathlib import Path
 from sleuth_sklearn.estimator import SLEUTH
 from sleuth_sklearn.utils import open_dataset
@@ -16,7 +18,7 @@ def main():
     
     args = parser.parse_args()
 
-    config_path = Path(args.path)
+    config_path = Path(args.PATH)
     with open(config_path, "r") as f:
         config = toml.load(f)
 
@@ -63,3 +65,15 @@ def main():
         y = ds["year"].values
 
     model.fit(X, y)
+
+    df = pd.DataFrame(model.osm_.items(), columns=["params", "osm"])
+    
+    df["diffusion"] = df["params"].str[0]
+    df["breed"] = df["params"].str[1]
+    df["spread"] = df["params"].str[2]
+    df["slope"] = df["params"].str[3]
+    df["road"] = df["params"].str[4]
+
+    df = df[["diffusion", "breed", "spread", "slope", "road", "osm"]]
+
+    df.to_csv(config["calibration"]["out_path"], index=False)

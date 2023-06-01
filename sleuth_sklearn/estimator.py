@@ -72,7 +72,9 @@ def evaluate_combinations(
             prngs=prngs,
         )
 
-        out[i] = st.evaluate_records(records, years, calibration_stats)
+        res = st.evaluate_records(records, years, calibration_stats)
+        print(res)
+        out[i] = res
     return out
 
 
@@ -153,7 +155,7 @@ class SLEUTH(BaseEstimator):
             raise ValueError("X and y don't have the same number of years.")
         
         if self.n_jobs == -1:
-            self.n_threads_ = 2 * multiprocessing.cpu_count()
+            self.n_threads_ = multiprocessing.cpu_count()
         else:
             self.n_threads_ = self.n_jobs
 
