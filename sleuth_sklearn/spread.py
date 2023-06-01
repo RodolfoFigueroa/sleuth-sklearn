@@ -1040,7 +1040,7 @@ def grow(
 
 
 @njit(
-    types.f8[:, :](
+    types.Tuple((types.i4[:, :, :], types.f8[:, :]))(
         types.b1[:, :],
         types.i8,  # nyears - DO NOT change to anything other than int
         types.i8,
@@ -1079,6 +1079,7 @@ def fill_montecarlo_grid(
     crit_slope,
     prngs,
 ):
+    grid_MC = np.zeros((nyears, *X0.shape), dtype=np.int32)
     records = np.zeros((nyears, J.TOTAL_SIZE), dtype=np.float64)
 
     for iter in prange(n_iters):
@@ -1099,11 +1100,13 @@ def fill_montecarlo_grid(
             crit_slope=crit_slope,
             prng=prngs[iter],
         )
-        new_records = res[1]
-        records += new_records
+        grid_MC += res[0]
+        records += res[1]
+
+    grid_MC /= n_iters
     records /= n_iters
 
-    return records
+    return grid_MC, records
 
 
 def coef_self_modification(

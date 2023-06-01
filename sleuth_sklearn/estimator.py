@@ -55,7 +55,7 @@ def evaluate_combinations(
         index = (c_diffusion, c_breed, c_spread, c_slope, c_road)
         print(index)
 
-        records = sp.fill_montecarlo_grid(
+        _, records = sp.fill_montecarlo_grid(
             X0,
             nyears=nyears,
             n_iters=n_iters,
@@ -166,8 +166,16 @@ class SLEUTH(BaseEstimator):
 
         numba.set_num_threads(self.n_threads_)
 
+        # Set RNG
+        self.seed_sequence_calibration_ = np.random.SeedSequence(self.random_state + 1)
+        self.prngs_calibration_ = typed.List(
+            [
+                np.random.Generator(np.random.SFC64(x))
+                for x in self.seed_sequence_calibration_.generate_state(self.n_iters)
+            ]
+        )
+
         # Set initial params
-        self.seed_sequence_ = np.random.SeedSequence(self.random_state)
         self.years_ = y
         self.calibration_stats_ = calculate_initial_stats(X, y, self.grid_slope)
 
@@ -195,13 +203,6 @@ class SLEUTH(BaseEstimator):
 
             combs = np.array(list(itertools.product(*current_grid)), dtype=np.int32)
 
-            self.prngs_ = typed.List(
-                [
-                    np.random.Generator(np.random.SFC64(x))
-                    for x in self.seed_sequence_.generate_state(self.n_iters)
-                ]
-            )
-
             osm = evaluate_combinations(
                 X[0],
                 combs,
@@ -215,7 +216,7 @@ class SLEUTH(BaseEstimator):
                 crit_slope=self.crit_slope,
                 years=self.years_,
                 calibration_stats=self.calibration_stats_,
-                prngs=self.prngs_,
+                prngs=self.prngs_calibration_,
             )
 
             for key, value in zip(combs, osm):
@@ -254,25 +255,35 @@ class SLEUTH(BaseEstimator):
     def predict(self, X, nyears):
         # Create monte carlo grid to accumulate probability of urbanization
         # one grid per simulated year
-        self.random_state_ = np.random.Generator(np.random.SFC64(self.random_state))
-
-        nrows, ncols = X.shape
-        grid_MC = np.zeros((nyears, nrows, ncols))
+        self.seed_sequence_prediction_ = np.random.SeedSequence(self.random_state - 1)
+        self.prngs_prediction_ = typed.List(
+            [
+                np.random.Generator(np.random.SFC64(x))
+                for x in self.seed_sequence_prediction_.generate_state(self.n_iters)
+            ]
+        )
 
         # Perform simulation from start to end year
-        for i in range(self.n_iters):
-            self.grow(
-                grid_MC,
-                X,
-                coef_diffusion=self.coef_diffusion_,
-                coef_breed=self.coef_breed_,
-                coef_spread=self.coef_spread_,
-                coef_slope=self.coef_slope_,
-                coef_road=self.coef_road_,
-            )
-
-        grid_MC /= self.n_iters
+        grid_MC, _ = sp.fill_montecarlo_grid(
+            X0=X,
+            nyears=nyears,
+            n_iters=self.n_iters,
+            grid_slope=self.grid_slope,
+            grid_excluded=self.grid_excluded,
+            grid_roads=self.grid_roads,
+            grid_roads_dist=self.grid_roads_dist,
+            grid_roads_i=self.grid_roads_i,
+            grid_roads_j=self.grid_roads_j,
+            coef_diffusion=self.coef_diffusion_,
+            coef_breed=self.coef_breed_,
+            coef_spread=self.coef_spread_,
+            coef_slope=self.coef_slope_,
+            coef_road=self.coef_road_,
+            crit_slope=self.crit_slope,
+            prngs=self.prngs_prediction_
+        )
         return grid_MC
+
 
     def _more_tags(self):
         return {"X_types": ["3darray"]}
