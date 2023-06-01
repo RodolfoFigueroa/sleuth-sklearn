@@ -166,15 +166,14 @@ class SLEUTH(BaseEstimator):
         self.years_ = y
         self.calibration_stats_ = calculate_initial_stats(X, y, self.grid_slope)
 
-        current_grid = np.array(
-            [
-                su.generate_grid(*self.coef_range_diffusion, self.n_refinement_splits),
-                su.generate_grid(*self.coef_range_breed, self.n_refinement_splits),
-                su.generate_grid(*self.coef_range_spread, self.n_refinement_splits),
-                su.generate_grid(*self.coef_range_slope, self.n_refinement_splits),
-                su.generate_grid(*self.coef_range_road, self.n_refinement_splits),
-            ]
-        )
+        current_grid = [
+            su.generate_grid(*self.coef_range_diffusion, self.n_refinement_splits),
+            su.generate_grid(*self.coef_range_breed, self.n_refinement_splits),
+            su.generate_grid(*self.coef_range_spread, self.n_refinement_splits),
+            su.generate_grid(*self.coef_range_slope, self.n_refinement_splits),
+            su.generate_grid(*self.coef_range_road, self.n_refinement_splits),
+        ]
+        
 
         self.param_grids_ = np.zeros(
             (self.n_refinement_iters, 5, self.n_refinement_splits)
@@ -182,12 +181,12 @@ class SLEUTH(BaseEstimator):
         self.osm_ = {}
 
         for refinement_iter in range(self.n_refinement_iters):
-            # Prevent searching over the same grid
-            for grid in self.param_grids_:
-                if (grid == current_grid).all():
-                    break
+            # # Prevent searching over the same grid
+            # for grid in self.param_grids_:
+            #     if (grid == current_grid).all():
+            #         break
 
-            self.param_grids_[refinement_iter] = grid
+            self.param_grids_[refinement_iter] = current_grid
 
             combs = np.array(list(itertools.product(*current_grid)), dtype=np.int32)
 
@@ -224,7 +223,7 @@ class SLEUTH(BaseEstimator):
                 [x[0] for x in scores_sorted[: self.n_refinement_winners]]
             )
 
-            new_param_grid = np.zeros((5, self.n_refinement_splits), dtype=np.int32)
+            new_param_grid = [None] * 5
             for i in range(5):
                 c_min = top_params[:, i].min()
                 c_max = top_params[:, i].max()
