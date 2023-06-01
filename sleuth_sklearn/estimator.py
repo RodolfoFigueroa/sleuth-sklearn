@@ -3,11 +3,13 @@ import multiprocessing
 import numba
 
 import numpy as np
+import pandas as pd
 import sleuth_sklearn.spread as sp
 import sleuth_sklearn.stats as st
 import sleuth_sklearn.utils as su
 
 from numba import njit, typed, types
+from pathlib import Path
 from sklearn.base import BaseEstimator
 from sleuth_sklearn.indices import J
 
@@ -148,7 +150,10 @@ class SLEUTH(BaseEstimator):
         self.random_state = random_state
         self.n_jobs = n_jobs
 
-    def fit(self, X, y):
+    def fit(self, X, y, out_dir=None):
+        if out_dir is not None:
+            out_dir = Path(out_dir)
+
         X = np.array(X, dtype=bool)
         y = np.array(y)
         if X.shape[0] != y.shape[0]:
@@ -175,9 +180,9 @@ class SLEUTH(BaseEstimator):
         ]
         
 
-        self.param_grids_ = np.zeros(
-            (self.n_refinement_iters, 5, self.n_refinement_splits)
-        )
+        # self.param_grids_ = np.zeros(
+        #     (self.n_refinement_iters, 5, self.n_refinement_splits)
+        # )
         self.osm_ = {}
 
         for refinement_iter in range(self.n_refinement_iters):
@@ -186,7 +191,7 @@ class SLEUTH(BaseEstimator):
             #     if (grid == current_grid).all():
             #         break
 
-            self.param_grids_[refinement_iter] = current_grid
+            # self.param_grids_[refinement_iter] = current_grid
 
             combs = np.array(list(itertools.product(*current_grid)), dtype=np.int32)
 
@@ -220,7 +225,7 @@ class SLEUTH(BaseEstimator):
                 sorted(self.osm_.items(), key=lambda x: x[1], reverse=True)
             )
             top_params = np.array(
-                [x[0] for x in scores_sorted[: self.n_refinement_winners]]
+                [x[0] for x in scores_sorted[:self.n_refinement_winners]]
             )
 
             new_param_grid = [None] * 5
@@ -232,6 +237,10 @@ class SLEUTH(BaseEstimator):
                 )
 
             current_grid = new_param_grid
+
+            if out_dir is not None:
+                temp_df = pd.DataFrame(self.osm_.items(), columns=["params", "osm"])
+                temp_df.to_csv(out_dir / f"stage_{refinement_iter}.csv", index=False)
 
         final_params = max(self.osm_, key=self.osm_.get)
         self.coef_diffusion_ = final_params[0]

@@ -64,7 +64,12 @@ def main():
         X = ds["urban"].values
         y = ds["year"].values
 
-    model.fit(X, y)
+    if "stage_dir" in config["calibration"]:
+        out_dir = config["calibration"]["stage_dir"]
+    else:
+        out_dir = None
+
+    model.fit(X, y, out_dir=out_dir)
 
     df = pd.DataFrame(model.osm_.items(), columns=["params", "osm"])
     
