@@ -80,30 +80,6 @@ def evaluate_combinations(
     return out
 
 
-@njit(types.f8[:, :](types.b1[:, :, :], types.i4[:], types.i4[:, :]), cache=True)
-def calculate_initial_stats(X, y, grid_slope):
-    calibration_stats = np.zeros((len(y), J.TOTAL_SIZE), dtype=np.float64)
-
-    idx_arr = np.array(
-        [
-            J.EDGES,
-            J.CLUSTERS,
-            J.POP,
-            J.XMEAN,
-            J.YMEAN,
-            J.SLOPE,
-            J.RAD,
-            J.MEAN_CLUSTER_SIZE,
-            J.PERCENT_URBAN,
-        ]
-    )
-    # TODO: Vectorize this
-    for i in range(len(y)):
-        calibration_stats[i, idx_arr] = st.compute_stats(X[i], grid_slope)
-
-    return calibration_stats
-
-
 class SLEUTH(BaseEstimator):
     def __init__(
         self,
@@ -150,6 +126,7 @@ class SLEUTH(BaseEstimator):
         self.random_state = random_state
         self.n_jobs = n_jobs
 
+
     def fit(self, X, y, out_dir=None):
         if out_dir is not None:
             out_dir = Path(out_dir)
@@ -177,7 +154,7 @@ class SLEUTH(BaseEstimator):
 
         # Set initial params
         self.years_ = y
-        self.calibration_stats_ = calculate_initial_stats(X, y, self.grid_slope)
+        self.calibration_stats_ = self.calculate_initial_stats(X, y)
 
         current_grid = [
             su.generate_grid(*self.coef_range_diffusion, self.n_refinement_splits),
@@ -264,7 +241,7 @@ class SLEUTH(BaseEstimator):
         )
 
         # Perform simulation from start to end year
-        grid_MC, _ = sp.fill_montecarlo_grid(
+        grid_MC, records = sp.fill_montecarlo_grid(
             X0=X,
             nyears=nyears,
             n_iters=self.n_iters,
@@ -282,7 +259,31 @@ class SLEUTH(BaseEstimator):
             crit_slope=self.crit_slope,
             prngs=self.prngs_prediction_
         )
-        return grid_MC
+        return grid_MC, records
+
+
+    def calculate_initial_stats(self, X, y):
+        calibration_stats = np.zeros((len(y), J.TOTAL_SIZE), dtype=np.float64)
+
+        idx_arr = np.array(
+            [
+                J.EDGES,
+                J.CLUSTERS,
+                J.POP,
+                J.XMEAN,
+                J.YMEAN,
+                J.SLOPE,
+                J.RAD,
+                J.MEAN_CLUSTER_SIZE,
+                J.PERCENT_URBAN,
+            ]
+        )
+
+        # TODO: Vectorize this
+        for i in range(len(y)):
+            calibration_stats[i, idx_arr] = st.compute_stats(X[i], self.grid_slope)
+
+        return calibration_stats
 
 
     def _more_tags(self):
