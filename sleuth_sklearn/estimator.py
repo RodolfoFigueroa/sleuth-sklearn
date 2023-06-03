@@ -230,8 +230,6 @@ class SLEUTH(BaseEstimator):
         return self
 
     def predict(self, X, nyears):
-        # Create monte carlo grid to accumulate probability of urbanization
-        # one grid per simulated year
         self.seed_sequence_prediction_ = np.random.SeedSequence(self.random_state - 1)
         self.prngs_prediction_ = typed.List(
             [

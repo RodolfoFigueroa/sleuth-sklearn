@@ -869,30 +869,30 @@ def spread(
     # TODO:Precalculate all slope weights?
 
     sng, sdc, grid_delta = phase1n3_new(
-        grid_Z,
-        grid_delta,
+        grid_Z=grid_Z,
+        grid_delta=grid_delta,
         # grid_slope,
         # grid_excluded,
-        coef_diffusion,
-        coef_breed,
+        coef_diffusion=coef_diffusion,
+        coef_breed=coef_breed,
         # coef_slope,
         # crit_slope,
-        prng,
+        prng=prng,
         # urb_attempt,
-        sweights,
+        sweights=sweights,
     )
 
     og, grid_delta = phase4_new(
-        grid_Z,
-        grid_delta,
+        grid_Z=grid_Z,
+        grid_delta=grid_delta,
         # grid_slope,
         # grid_excluded,
-        coef_spread,
+        coef_spread=coef_spread,
         # coef_slope,
         # crit_slope,
-        prng,
+        prng=prng,
         # urb_attempt,
-        sweights,
+        sweights=sweights,
     )
 
     rt = phase5(
@@ -987,21 +987,21 @@ def grow(
     for i in range(nyears):
         # Apply CA rules for current year
         sng, sdc, og, rt, num_growth_pix = spread(
-            grid_Z,
-            grid_slope,
-            grid_excluded,
-            grid_roads,
-            grid_roads_dist,
-            grid_roads_i,
-            grid_roads_j,
-            coef_diffusion,
-            coef_breed,
-            coef_spread,
-            coef_slope,
-            coef_road,
-            crit_slope,
-            prng,
-            sweights,
+            grid_Z=grid_Z,
+            grid_slope=grid_slope,
+            grid_excluded=grid_excluded,
+            grid_roads=grid_roads,
+            grid_roads_dist=grid_roads_dist,
+            grid_roads_i=grid_roads_i,
+            grid_roads_j=grid_roads_j,
+            coef_diffusion=coef_diffusion,
+            coef_breed=coef_breed,
+            coef_spread=coef_spread,
+            coef_slope=coef_slope,
+            coef_road=coef_road,
+            crit_slope=crit_slope,
+            prng=prng,
+            sweights=sweights,
         )
 
         # Send stats to current year (ints)
@@ -1084,7 +1084,7 @@ def fill_montecarlo_grid(
 
     for iter in prange(n_iters):
         res = grow(
-            X0,
+            seed_grid=X0,
             nyears=nyears,
             grid_slope=grid_slope,
             grid_excluded=grid_excluded,
