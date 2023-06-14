@@ -168,3 +168,5 @@ log
 stages*/
 generated*/
 *.ipynb
+*.csv
+config.toml
