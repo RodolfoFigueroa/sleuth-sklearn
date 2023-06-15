@@ -16,3 +16,21 @@ PERCENT_URBAN = 13
 GROWTH_RATE = 14
 
 TOTAL_SIZE = 15
+
+NAMES = [
+    "sng",
+    "sdc",
+    "og",
+    "rt",
+    "num_growth_pix",
+    "edges",
+    "clusters",
+    "pop",
+    "xmean",
+    "ymean",
+    "slope",
+    "rad",
+    "mean_cluster_size",
+    "percent_urban",
+    "growth_rate"
+]

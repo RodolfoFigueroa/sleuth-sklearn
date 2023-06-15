@@ -7,6 +7,7 @@ import pandas as pd
 import sleuth_sklearn.spread as sp
 import sleuth_sklearn.stats as st
 import sleuth_sklearn.utils as su
+import xarray as xr
 
 from numba import njit, typed, types
 from pathlib import Path
@@ -15,7 +16,7 @@ from sleuth_sklearn.indices import J
 
 
 @njit(
-    types.f8[:](
+    types.Tuple((types.f8[:], types.f8[:, :, :], types.f8[:, :, :]))(
         types.b1[:, :],
         types.i4[:, :],
         types.i4[:],
@@ -48,14 +49,16 @@ def evaluate_combinations(
     calibration_stats,
 ):
     nyears = years[-1] - years[0] + 1
-    out = np.zeros(len(combs), dtype=np.float64)
+    out_osm = np.empty(len(combs), dtype=np.float64)
+    out_records_mean = np.empty((len(combs), nyears, J.TOTAL_SIZE), dtype=np.float64)
+    out_records_std = np.empty((len(combs), nyears, J.TOTAL_SIZE), dtype=np.float64)
 
     for i in range(len(combs)):
         c_diffusion, c_breed, c_spread, c_slope, c_road = combs[i]
         index = (c_diffusion, c_breed, c_spread, c_slope, c_road)
         print(index)
 
-        _, records = sp.fill_montecarlo_grid(
+        _, records_mean, records_std = sp.fill_montecarlo_grid(
             X0,
             nyears=nyears,
             n_iters=n_iters,
@@ -74,9 +77,30 @@ def evaluate_combinations(
             prngs=prngs,
         )
 
-        res = st.evaluate_records(records, years, calibration_stats)
+        res = st.evaluate_records(records_mean, years, calibration_stats)
         print(res)
-        out[i] = res
+
+        out_osm[i] = res
+        out_records_mean[i] = records_mean
+        out_records_std[i] = records_std
+    return out_osm, out_records_mean, out_records_std
+
+
+def reshape_nc(arr, current_grid, all_years):
+    reshaped = arr.reshape(*[len(g) for g in current_grid], len(all_years), J.TOTAL_SIZE)
+    out = xr.DataArray(
+        data=reshaped,
+        dims=["diffusion", "breed", "spread", "slope", "road", "year", "stat"],
+        coords=dict(
+            diffusion=current_grid[0],
+            breed=current_grid[1],
+            spread=current_grid[2],
+            slope=current_grid[3],
+            road=current_grid[4],
+            year=all_years,
+            stat=J.NAMES
+        )
+    )
     return out
 
 
@@ -130,6 +154,7 @@ class SLEUTH(BaseEstimator):
     def fit(self, X, y, out_dir=None):
         if out_dir is not None:
             out_dir = Path(out_dir)
+            out_dir.mkdir(parents=True, exist_ok=True)
 
         X = np.array(X, dtype=bool)
         y = np.array(y)
@@ -144,7 +169,10 @@ class SLEUTH(BaseEstimator):
         numba.set_num_threads(self.n_threads_)
 
         # Set RNG
-        self.seed_sequence_calibration_ = np.random.SeedSequence(self.random_state + 1)
+        if self.random_state is not None:
+            self.seed_sequence_calibration_ = np.random.SeedSequence(self.random_state + 1)
+        else:
+            self.seed_sequence_calibration_ = np.random.SeedSequence()
         self.prngs_calibration_ = typed.List(
             [
                 np.random.Generator(np.random.SFC64(x))
@@ -180,7 +208,7 @@ class SLEUTH(BaseEstimator):
 
             combs = np.array(list(itertools.product(*current_grid)), dtype=np.int32)
 
-            osm = evaluate_combinations(
+            osm, records_mean, records_std = evaluate_combinations(
                 X[0],
                 combs,
                 n_iters=self.n_iters,
@@ -214,11 +242,32 @@ class SLEUTH(BaseEstimator):
                     current_grid[i], c_min, c_max, self.n_refinement_splits
                 )
 
-            current_grid = new_param_grid
+            #= Save results =#
+            param_arr = np.array(list(self.osm_.keys()))
 
             if out_dir is not None:
-                temp_df = pd.DataFrame(self.osm_.items(), columns=["params", "osm"])
-                temp_df.to_csv(out_dir / f"stage_{refinement_iter}.csv", index=False)
+                out_df = pd.DataFrame(
+                    zip(*param_arr.T, self.osm_.values()),
+                    columns=["diffusion", "breed", "spread", "slope", "road", "osm"]
+                )
+                out_df.to_csv(out_dir / f"stage_{refinement_iter}.csv", index=False)
+                
+                start_year = self.years_[0]
+                end_year = self.years_[-1]
+                all_years = list(range(start_year, end_year + 1))
+
+                means_reshaped = reshape_nc(records_mean, current_grid, all_years)
+                stds_reshaped = reshape_nc(records_std, current_grid, all_years)
+
+                means_reshaped.to_netcdf(out_dir / f"means_{refinement_iter}.nc")
+                stds_reshaped.to_netcdf(out_dir / f"stds_{refinement_iter}.nc")
+
+                np.save(out_dir / f"combs_{refinement_iter}.npy", combs)
+                np.save(out_dir / f"means_{refinement_iter}.npy", records_mean)
+                np.save(out_dir / f"stds_{refinement_iter}.npy", records_std)
+
+            #= Update param grid =#
+            current_grid = new_param_grid
 
         final_params = max(self.osm_, key=self.osm_.get)
         self.coef_diffusion_ = final_params[0]
@@ -230,7 +279,10 @@ class SLEUTH(BaseEstimator):
         return self
 
     def predict(self, X, nyears):
-        self.seed_sequence_prediction_ = np.random.SeedSequence(self.random_state - 1)
+        if self.random_state is not None:
+            self.seed_sequence_calibration_ = np.random.SeedSequence(self.random_state - 1)
+        else:
+            self.seed_sequence_calibration_ = np.random.SeedSequence()
         self.prngs_prediction_ = typed.List(
             [
                 np.random.Generator(np.random.SFC64(x))
@@ -239,7 +291,7 @@ class SLEUTH(BaseEstimator):
         )
 
         # Perform simulation from start to end year
-        grid_MC, records = sp.fill_montecarlo_grid(
+        grid_MC, records_mean, records_std = sp.fill_montecarlo_grid(
             X0=X,
             nyears=nyears,
             n_iters=self.n_iters,
@@ -257,7 +309,7 @@ class SLEUTH(BaseEstimator):
             crit_slope=self.crit_slope,
             prngs=self.prngs_prediction_
         )
-        return grid_MC, records
+        return grid_MC, records_mean, records_std
 
 
     def calculate_initial_stats(self, X, y):
