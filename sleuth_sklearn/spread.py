@@ -660,7 +660,7 @@ def phase5(
         coords = coords[rand_idx]
 
     # Search for nearest road, and select only if road is close enough
-    dists = np.empty(len(coords))
+    dists = np.empty(len(coords), dtype=np.int32)
     for a, (b, c) in enumerate(coords):
         dists[a] = grid_roads_dist[b, c]
 
@@ -706,8 +706,8 @@ def phase5(
             flat_idx = np.zeros(len(nbrs), dtype=np.bool_)
             for a, (b, c) in enumerate(nbrs):
                 flat_idx[a] = grid_roads[b, c] > 0
-
             nbrs = nbrs[flat_idx]
+
             # TODO: there is a bug when a road is a single pixel and has no neighbors
             # TODO: Fix in road preprocessing
             # The following is a hacky patch
@@ -1040,7 +1040,7 @@ def grow(
 
 
 @njit(
-    types.Tuple((types.f8[:, :, :], types.f8[:, :]))(
+    types.Tuple((types.f8[:, :, :], types.f8[:, :], types.f8[:, :]))(
         types.b1[:, :],
         types.i8,  # nyears - DO NOT change to anything other than int
         types.i8,
@@ -1080,7 +1080,8 @@ def fill_montecarlo_grid(
     prngs,
 ):
     grid_MC = np.zeros((nyears, X0.shape[0], X0.shape[1]), dtype=np.float64)
-    records = np.zeros((nyears, J.TOTAL_SIZE), dtype=np.float64)
+    records_sum = np.zeros((nyears, J.TOTAL_SIZE), dtype=np.float64)
+    records_sum_sq = np.zeros((nyears, J.TOTAL_SIZE), dtype=np.float64)
 
     for iter in prange(n_iters):
         res = grow(
@@ -1101,122 +1102,12 @@ def fill_montecarlo_grid(
             prng=prngs[iter],
         )
         grid_MC += res[0]
-        records += res[1]
+        records_sum += res[1]
+        records_sum_sq += res[1]**2
 
     grid_MC /= n_iters
-    records /= n_iters
+    
+    records_mean = records_sum / n_iters
+    records_std = np.sqrt((records_sum_sq - 2 * records_mean * records_sum) / n_iters + records_mean**2)
 
-    return grid_MC, records
-
-
-def coef_self_modification(
-    coef_diffusion,
-    coef_breed,
-    coef_spread,
-    coef_slope,
-    coef_road,
-    boom,
-    bust,
-    sens_slope,
-    sens_road,
-    growth_rate,
-    percent_urban,
-    critical_high,
-    critical_low,
-):
-    """Applies self modification rules to growth coefficients.
-
-    When growth is extreme during a given year, coefficients are modified to
-    further mantain the growth trend.
-    High growth results in a boom year, and coefficients are adjusted to
-    further encourage growth.
-    Low growth results in a bust year, and coefficients are adjusted to further
-    restrict growth.
-
-    Parameters
-    ----------
-    coef_diffusion : float
-        Diffusion coefficient.
-    coef_breed : float
-        Breed coefficient.
-    coef_spread : float
-        Spread coefficient.
-    coef_slope : float
-        Slope coefficient.
-    coef_road : float
-        Road coefficient.
-    boom : float
-        Constant greater than one that multiplies coefficients after
-        a boom year.
-    bust : float
-        Constant less than one that multiplies coefficients after a bust year.
-    sens_slope : float
-        Slope sensitivity.
-    sens_road : float
-        Road sensitivity.
-    growth_rate: float
-        Percent of newly urbanized pixels with respect to total urbanization.
-    percent_urban: float
-        Percentage of urban pixels with respect to total pixels.
-    critical_high:
-        Growth rate treshold beyon which a boom is triggered.
-    critical_low:
-        Growth rate treshold below which a bust is triggered.
-
-    Returns
-    -------
-    coef_diffusion : float
-        Modified diffusion coefficient.
-    coef_breed : float
-        Modified breed coefficient.
-    coef_spread : float
-        Modified spread coefficient.
-    coef_slope : float
-        Modified slope coefficient.
-    coef_road : float
-        Modified road coefficient.
-
-    """
-
-    # The self modification rules described in the official
-    # documentation are not the ones implemented on the
-    # official SLEUTH code.
-    # Here we follow the code implementation.
-
-    # BOOM year
-    if growth_rate > critical_high:
-        coef_slope -= percent_urban * sens_slope
-        coef_slope = max(coef_slope, 1.0)
-
-        coef_road += percent_urban * sens_road
-        coef_road = min(coef_road, 100.0)
-
-        if coef_diffusion < 100.0:
-            coef_diffusion *= boom
-            coef_diffusion = min(coef_diffusion, 100.0)
-
-            coef_breed *= boom
-            coef_breed = min(coef_breed, 100.0)
-
-            coef_spread *= boom
-            coef_spread = min(coef_spread, 100.0)
-
-    # BOOST year
-    if growth_rate < critical_low:
-        coef_slope += percent_urban * sens_slope
-        coef_slope = min(coef_slope, 100.0)
-
-        coef_road -= percent_urban * sens_road
-        coef_road = max(coef_road, 1.0)
-
-        if coef_diffusion > 1:
-            coef_diffusion *= bust
-            coef_diffusion = max(coef_diffusion, 1.0)
-
-            coef_breed *= bust
-            coef_breed = max(coef_breed, 1.0)
-
-            coef_spread *= bust
-            coef_spread = max(coef_spread, 1.0)
-
-    return coef_diffusion, coef_breed, coef_spread, coef_slope, coef_road
+    return grid_MC, records_mean, records_std
