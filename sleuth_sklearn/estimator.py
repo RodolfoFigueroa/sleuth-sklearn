@@ -262,10 +262,6 @@ class SLEUTH(BaseEstimator):
                 means_reshaped.to_netcdf(out_dir / f"means_{refinement_iter}.nc")
                 stds_reshaped.to_netcdf(out_dir / f"stds_{refinement_iter}.nc")
 
-                np.save(out_dir / f"combs_{refinement_iter}.npy", combs)
-                np.save(out_dir / f"means_{refinement_iter}.npy", records_mean)
-                np.save(out_dir / f"stds_{refinement_iter}.npy", records_std)
-
             #= Update param grid =#
             current_grid = new_param_grid
 
