@@ -276,9 +276,9 @@ class SLEUTH(BaseEstimator):
 
     def predict(self, X, nyears):
         if self.random_state is not None:
-            self.seed_sequence_calibration_ = np.random.SeedSequence(self.random_state - 1)
+            self.seed_sequence_prediction_ = np.random.SeedSequence(self.random_state - 1)
         else:
-            self.seed_sequence_calibration_ = np.random.SeedSequence()
+            self.seed_sequence_prediction_ = np.random.SeedSequence()
         self.prngs_prediction_ = typed.List(
             [
                 np.random.Generator(np.random.SFC64(x))
