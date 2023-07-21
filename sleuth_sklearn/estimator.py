@@ -15,77 +15,6 @@ from sklearn.base import BaseEstimator
 from sleuth_sklearn.indices import J
 
 
-@njit(
-    types.Tuple((types.f8[:], types.f8[:, :, :], types.f8[:, :, :]))(
-        types.b1[:, :],
-        types.i4[:, :],
-        types.i4[:],
-        types.i8,
-        types.i4[:, :],
-        types.i4[:, :],
-        types.i4[:, :],
-        types.i4[:, :],
-        types.i4[:, :],
-        types.i4[:, :],
-        types.i4,
-        types.ListType(types.NumPyRandomGeneratorType("prng")),
-        types.f8[:, :],
-    ),
-    cache=True,
-)
-def evaluate_combinations(
-    X0,
-    combs,
-    years,
-    n_iters,
-    grid_slope,
-    grid_excluded,
-    grid_roads,
-    grid_roads_dist,
-    grid_roads_i,
-    grid_roads_j,
-    crit_slope,
-    prngs,
-    calibration_stats,
-):
-    nyears = years[-1] - years[0] + 1
-    out_osm = np.empty(len(combs), dtype=np.float64)
-    out_records_mean = np.empty((len(combs), nyears, J.TOTAL_SIZE), dtype=np.float64)
-    out_records_std = np.empty((len(combs), nyears, J.TOTAL_SIZE), dtype=np.float64)
-
-    for i in range(len(combs)):
-        c_diffusion, c_breed, c_spread, c_slope, c_road = combs[i]
-        index = (c_diffusion, c_breed, c_spread, c_slope, c_road)
-        print(index)
-
-        _, records_mean, records_std = sp.fill_montecarlo_grid(
-            X0,
-            nyears=nyears,
-            n_iters=n_iters,
-            grid_slope=grid_slope,
-            grid_excluded=grid_excluded,
-            grid_roads=grid_roads,
-            grid_roads_dist=grid_roads_dist,
-            grid_roads_i=grid_roads_i,
-            grid_roads_j=grid_roads_j,
-            coef_diffusion=c_diffusion,
-            coef_breed=c_breed,
-            coef_spread=c_spread,
-            coef_slope=c_slope,
-            coef_road=c_road,
-            crit_slope=crit_slope,
-            prngs=prngs,
-        )
-
-        res = st.evaluate_records(records_mean, years, calibration_stats)
-        print(res)
-
-        out_osm[i] = res
-        out_records_mean[i] = records_mean
-        out_records_std[i] = records_std
-    return out_osm, out_records_mean, out_records_std
-
-
 def reshape_nc(arr, current_grid, all_years):
     reshaped = arr.reshape(*[len(g) for g in current_grid], len(all_years), J.TOTAL_SIZE)
     out = xr.DataArray(
@@ -124,7 +53,9 @@ class SLEUTH(BaseEstimator):
         grid_roads_j=np.empty(0),
         crit_slope=50,
         random_state=None,
-        n_jobs=-1
+        n_jobs=-1,
+        log_dir=None,
+        verbose=0
     ):
         self.n_iters = n_iters
 
@@ -149,12 +80,19 @@ class SLEUTH(BaseEstimator):
 
         self.random_state = random_state
         self.n_jobs = n_jobs
+        
+        self.log_dir = log_dir
+        self.verbose = verbose
 
 
-    def fit(self, X, y, out_dir=None):
-        if out_dir is not None:
-            out_dir = Path(out_dir)
-            out_dir.mkdir(parents=True, exist_ok=True)
+    def fit(self, X, y):
+        if self.verbose > 0:
+            if self.log_dir is None:
+                raise IOError("verbose > 0 but log_dir wasn't set in constructor.")
+            else:
+                self.log_dir_path_ = Path(self.log_dir)
+                self.log_dir_path_.mkdir(exist_ok=True, parents=True)
+
 
         X = np.array(X, dtype=bool)
         y = np.array(y)
@@ -208,21 +146,63 @@ class SLEUTH(BaseEstimator):
 
             combs = np.array(list(itertools.product(*current_grid)), dtype=np.int32)
 
-            osm, records_mean, records_std = evaluate_combinations(
-                X[0],
-                combs,
-                n_iters=self.n_iters,
-                grid_slope=self.grid_slope,
-                grid_excluded=self.grid_excluded,
-                grid_roads=self.grid_roads,
-                grid_roads_dist=self.grid_roads_dist,
-                grid_roads_i=self.grid_roads_i,
-                grid_roads_j=self.grid_roads_j,
-                crit_slope=self.crit_slope,
-                years=self.years_,
-                calibration_stats=self.calibration_stats_,
-                prngs=self.prngs_calibration_,
-            )
+            nyears = self.years_[-1] - self.years_[0] + 1
+            osm = np.empty(len(combs), dtype=np.float64)
+            records_mean = np.empty((len(combs), nyears, J.TOTAL_SIZE), dtype=np.float64)
+            records_std = np.empty((len(combs), nyears, J.TOTAL_SIZE), dtype=np.float64)
+
+            for i in range(len(combs)):
+                c_diffusion, c_breed, c_spread, c_slope, c_road = combs[i]
+                index = (c_diffusion, c_breed, c_spread, c_slope, c_road)
+                print(index)
+
+                if self.verbose <= 1:
+                    _, records_mean_partial, records_std_partial = sp.fill_montecarlo_grid(
+                        X[0],
+                        nyears=nyears,
+                        n_iters=self.n_iters,
+                        grid_slope=self.grid_slope,
+                        grid_excluded=self.grid_excluded,
+                        grid_roads=self.grid_roads,
+                        grid_roads_dist=self.grid_roads_dist,
+                        grid_roads_i=self.grid_roads_i,
+                        grid_roads_j=self.grid_roads_j,
+                        coef_diffusion=c_diffusion,
+                        coef_breed=c_breed,
+                        coef_spread=c_spread,
+                        coef_slope=c_slope,
+                        coef_road=c_road,
+                        crit_slope=self.crit_slope,
+                        prngs=self.prngs_calibration_,
+                    )
+                else:
+                    _, records_mean_partial, records_std_partial = sp.fill_montecarlo_grid_io(
+                        X[0],
+                        nyears=nyears,
+                        n_iters=self.n_iters,
+                        grid_slope=self.grid_slope,
+                        grid_excluded=self.grid_excluded,
+                        grid_roads=self.grid_roads,
+                        grid_roads_dist=self.grid_roads_dist,
+                        grid_roads_i=self.grid_roads_i,
+                        grid_roads_j=self.grid_roads_j,
+                        coef_diffusion=c_diffusion,
+                        coef_breed=c_breed,
+                        coef_spread=c_spread,
+                        coef_slope=c_slope,
+                        coef_road=c_road,
+                        crit_slope=self.crit_slope,
+                        prngs=self.prngs_calibration_,
+                        log_dir=self.log_dir_path_
+                    )
+
+
+                res = st.evaluate_records(records_mean, self.years_, self.calibration_stats_)
+                print(res)
+
+                osm[i] = res
+                records_mean[i] = records_mean_partial
+                records_std[i] = records_std_partial
 
             for key, value in zip(combs, osm):
                 self.osm_[tuple(key)] = value
@@ -245,12 +225,12 @@ class SLEUTH(BaseEstimator):
             #= Save results =#
             param_arr = np.array(list(self.osm_.keys()))
 
-            if out_dir is not None:
+            if self.verbose > 0:
                 out_df = pd.DataFrame(
                     zip(*param_arr.T, self.osm_.values()),
                     columns=["diffusion", "breed", "spread", "slope", "road", "osm"]
                 )
-                out_df.to_csv(out_dir / f"stage_{refinement_iter}.csv", index=False)
+                out_df.to_csv(self.log_dir_path_ / f"stage_{refinement_iter}.csv", index=False)
                 
                 start_year = self.years_[0]
                 end_year = self.years_[-1]
@@ -259,8 +239,9 @@ class SLEUTH(BaseEstimator):
                 means_reshaped = reshape_nc(records_mean, current_grid, all_years)
                 stds_reshaped = reshape_nc(records_std, current_grid, all_years)
 
-                means_reshaped.to_netcdf(out_dir / f"means_{refinement_iter}.nc")
-                stds_reshaped.to_netcdf(out_dir / f"stds_{refinement_iter}.nc")
+                means_reshaped.to_netcdf(self.log_dir_path / f"means_{refinement_iter}.nc")
+                stds_reshaped.to_netcdf(self.log_dir_path / f"stds_{refinement_iter}.nc")
+
 
             #= Update param grid =#
             current_grid = new_param_grid

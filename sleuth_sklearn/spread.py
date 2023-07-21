@@ -337,7 +337,7 @@ def phase4_new(
     # Update delta grid
     grid_delta = np.logical_or(grid_delta, mask)
 
-    # Get urbanize pixels in this phase
+    # Get urbanized pixels in this phase
     # Note: this double counts already urbanized pixels.
     og = mask.sum()
 
@@ -915,8 +915,7 @@ def spread(
     # timers.SPR_PHASE5.stop()
 
     # Performe excluded test, in this new implmentation
-    # this test is only performed once per step
-    # in the delta grid
+    # this test is only performed once per step in the delta grid
     # excld value is the 100*probability of rejecting urbanization
     # TODO: implement as boolean operation without indexing
     excld_mask = (prng.random(size=grid_delta.shape) * 100) < grid_excluded
@@ -1042,7 +1041,7 @@ def grow(
 @njit(
     types.Tuple((types.f8[:, :, :], types.f8[:, :], types.f8[:, :]))(
         types.b1[:, :],
-        types.i8,  # nyears - DO NOT change to anything other than int
+        types.i8,  # nyears - DO NOT change to anything other than int/uint
         types.i8,
         types.i4[:, :],
         types.i4[:, :],
@@ -1109,5 +1108,122 @@ def fill_montecarlo_grid(
     
     records_mean = records_sum / n_iters
     records_std = np.sqrt((records_sum_sq - 2 * records_mean * records_sum) / n_iters + records_mean**2)
+
+    return grid_MC, records_mean, records_std
+
+
+@njit(
+    types.Tuple((types.f8[:, :, :], types.f8[:, :], types.f8[:, :]))(
+        types.b1[:, :],
+        types.i8,  # nyears - DO NOT change to anything other than int/uint
+        types.i8,
+        types.i4[:, :],
+        types.i4[:, :],
+        types.i4[:, :],
+        types.i4[:, :],
+        types.i4[:, :],
+        types.i4[:, :],
+        types.i4,
+        types.i4,
+        types.i4,
+        types.i4,
+        types.i4,
+        types.i4,
+        types.ListType(types.NumPyRandomGeneratorType("NumPyRandomGeneratorType")),
+    ),
+    parallel=True,
+    cache=True,
+)
+def run_simulation_io(
+    X0,
+    nyears,
+    n_iters,
+    grid_slope,
+    grid_excluded,
+    grid_roads,
+    grid_roads_dist,
+    grid_roads_i,
+    grid_roads_j,
+    coef_diffusion,
+    coef_breed,
+    coef_spread,
+    coef_slope,
+    coef_road,
+    crit_slope,
+    prngs,
+):
+    grid_MC = np.zeros((nyears, X0.shape[0], X0.shape[1]), dtype=np.float64)
+    records = np.zeros((n_iters, nyears, J.TOTAL_SIZE), dtype=np.float64)
+
+    for iter in prange(n_iters):
+        res = grow(
+            seed_grid=X0,
+            nyears=nyears,
+            grid_slope=grid_slope,
+            grid_excluded=grid_excluded,
+            grid_roads=grid_roads,
+            grid_roads_dist=grid_roads_dist,
+            grid_roads_i=grid_roads_i,
+            grid_roads_j=grid_roads_j,
+            coef_diffusion=coef_diffusion,
+            coef_breed=coef_breed,
+            coef_spread=coef_spread,
+            coef_slope=coef_slope,
+            coef_road=coef_road,
+            crit_slope=crit_slope,
+            prng=prngs[iter],
+        )
+        grid_MC += res[0]
+        records[iter] = res[1]
+
+    return grid_MC, records
+
+
+def fill_montecarlo_grid_io(
+    X0,
+    nyears,
+    n_iters,
+    grid_slope,
+    grid_excluded,
+    grid_roads,
+    grid_roads_dist,
+    grid_roads_i,
+    grid_roads_j,
+    coef_diffusion,
+    coef_breed,
+    coef_spread,
+    coef_slope,
+    coef_road,
+    crit_slope,
+    prngs,
+    log_dir
+):
+    grid_MC, records = run_simulation_io(
+        X0=X0,
+        nyears=nyears,
+        n_iters=n_iters,
+        grid_slope=grid_slope,
+        grid_excluded=grid_excluded,
+        grid_roads=grid_roads,
+        grid_roads_dist=grid_roads_dist,
+        grid_roads_i=grid_roads_i,
+        grid_roads_j=grid_roads_j,
+        coef_breed=coef_breed,
+        coef_diffusion=coef_diffusion,
+        coef_road=coef_road,
+        coef_slope=coef_slope,
+        coef_spread=coef_spread,
+        crit_slope=crit_slope,
+        prngs=prngs,
+    )
+
+    grid_MC /= n_iters
+    
+    out_dir = log_dir / f"{coef_diffusion}_{coef_breed}_{coef_spread}_{coef_slope}_{coef_road}"
+
+    np.save(out_dir / f"records.npy", records)
+
+    records_mean = records.mean(axis=0)
+    records_std = records.std(axis=0)
 
     return grid_MC, records_mean, records_std
