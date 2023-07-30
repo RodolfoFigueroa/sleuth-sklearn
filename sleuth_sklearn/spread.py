@@ -1113,7 +1113,7 @@ def fill_montecarlo_grid(
 
 
 @njit(
-    types.Tuple((types.f8[:, :, :], types.f8[:, :], types.f8[:, :]))(
+    types.Tuple((types.f8[:, :, :], types.f8[:, :, :], types.f8[:, :]))(
         types.b1[:, :],
         types.i8,  # nyears - DO NOT change to anything other than int/uint
         types.i8,
