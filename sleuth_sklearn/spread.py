@@ -769,7 +769,7 @@ def phase5(
 
 
 @njit(
-    types.Tuple((types.i4, types.i4, types.i4, types.i4, types.i4))(
+    types.UniTuple(types.i4, 5)(
         types.b1[:, :],
         types.i4[:, :],
         types.i4[:, :],
@@ -1113,7 +1113,7 @@ def fill_montecarlo_grid(
 
 
 @njit(
-    types.Tuple((types.f8[:, :, :], types.f8[:, :, :], types.f8[:, :]))(
+    types.UniTuple(types.f8[:, :, :], 2)(
         types.b1[:, :],
         types.i8,  # nyears - DO NOT change to anything other than int/uint
         types.i8,
