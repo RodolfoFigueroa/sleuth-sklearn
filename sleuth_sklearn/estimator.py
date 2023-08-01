@@ -197,7 +197,7 @@ class SLEUTH(BaseEstimator):
                     )
 
 
-                res = st.evaluate_records(records_mean, self.years_, self.calibration_stats_)
+                res = st.evaluate_records(records_mean_partial, self.years_, self.calibration_stats_)
                 print(res)
 
                 osm[i] = res
