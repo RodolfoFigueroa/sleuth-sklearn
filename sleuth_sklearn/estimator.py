@@ -239,8 +239,8 @@ class SLEUTH(BaseEstimator):
                 means_reshaped = reshape_nc(records_mean, current_grid, all_years)
                 stds_reshaped = reshape_nc(records_std, current_grid, all_years)
 
-                means_reshaped.to_netcdf(self.log_dir_path / f"means_{refinement_iter}.nc")
-                stds_reshaped.to_netcdf(self.log_dir_path / f"stds_{refinement_iter}.nc")
+                means_reshaped.to_netcdf(self.log_dir_path_ / f"means_{refinement_iter}.nc")
+                stds_reshaped.to_netcdf(self.log_dir_path_ / f"stds_{refinement_iter}.nc")
 
 
             #= Update param grid =#
