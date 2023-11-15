@@ -77,7 +77,6 @@ def evaluate_records(
     # The optimal SLEUTH metric is the product of:
     # compare, pop, edges, clusters, slope, x_mean, and y_mean
     # Extract mean records for urban years
-    # sim_means = [record[I.AVERAGE] for record, year in zip(records, sim_years) if year in self.years_]
     sim_idx = np.array([year in years for year in range(years[0], years[-1] + 1)])
     sim_means = records[sim_idx]
 
@@ -89,7 +88,6 @@ def evaluate_records(
     compare = min(final_pop_sim, final_pop_urb) / max(final_pop_sim, final_pop_urb)
 
     # Find regression coefficients, ignore seed year
-    # osm_metrics_names = ["pop", "edges", "clusters", "slope", "xmean", "ymean"]
     osm_metrics_idx = [J.POP, J.EDGES, J.CLUSTERS, J.SLOPE, J.XMEAN, J.YMEAN]
     osm_metrics = np.zeros(len(osm_metrics_idx), dtype=np.float64)
 

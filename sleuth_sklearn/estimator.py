@@ -9,7 +9,7 @@ import sleuth_sklearn.stats as st
 import sleuth_sklearn.utils as su
 import xarray as xr
 
-from numba import njit, typed, types
+from numba import njit, typed
 from pathlib import Path
 from sklearn.base import BaseEstimator
 from sleuth_sklearn.indices import J
@@ -130,10 +130,6 @@ class SLEUTH(BaseEstimator):
             su.generate_grid(*self.coef_range_road, self.n_refinement_splits),
         ]
         
-
-        # self.param_grids_ = np.zeros(
-        #     (self.n_refinement_iters, 5, self.n_refinement_splits)
-        # )
         self.osm_ = {}
 
         for refinement_iter in range(self.n_refinement_iters):
@@ -311,7 +307,6 @@ class SLEUTH(BaseEstimator):
             calibration_stats[i, idx_arr] = st.compute_stats(X[i], self.grid_slope)
 
         return calibration_stats
-
 
     def _more_tags(self):
         return {"X_types": ["3darray"]}
