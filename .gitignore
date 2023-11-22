@@ -170,3 +170,4 @@ generated*/
 *.ipynb
 *.csv
 config.toml
+cache/
