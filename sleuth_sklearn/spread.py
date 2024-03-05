@@ -1,7 +1,7 @@
 import numpy as np
 import sleuth_sklearn.stats as st
 
-from numba import generated_jit, njit, prange, types
+from numba import njit, prange, types
 from sleuth_sklearn.indices import J
 
 
