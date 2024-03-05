@@ -9,7 +9,7 @@ import sleuth_sklearn.stats as st
 import sleuth_sklearn.utils as su
 import xarray as xr
 
-from numba import njit, typed
+from numba import typed
 from pathlib import Path
 from sklearn.base import BaseEstimator
 from sleuth_sklearn.indices import J
@@ -86,6 +86,14 @@ class SLEUTH(BaseEstimator):
 
 
     def fit(self, X, y):
+        coefficient_ranges = [
+            self.coef_range_diffusion,
+            self.coef_range_breed,
+            self.coef_range_spread,
+            self.coef_range_slope,
+            self.coef_range_road,
+        ]
+
         if self.verbose > 0:
             if self.log_dir is None:
                 raise IOError("verbose > 0 but log_dir wasn't set in constructor.")
@@ -121,14 +129,13 @@ class SLEUTH(BaseEstimator):
         # Set initial params
         self.years_ = y
         self.calibration_stats_ = self.calculate_initial_stats(X, y)
-
-        current_grid = [
-            su.generate_grid(*self.coef_range_diffusion, self.n_refinement_splits),
-            su.generate_grid(*self.coef_range_breed, self.n_refinement_splits),
-            su.generate_grid(*self.coef_range_spread, self.n_refinement_splits),
-            su.generate_grid(*self.coef_range_slope, self.n_refinement_splits),
-            su.generate_grid(*self.coef_range_road, self.n_refinement_splits),
-        ]
+        
+        current_grid = [None] * 5
+        for i, coef in enumerate(coefficient_ranges):
+            if isinstance(coef, int):
+                current_grid[i] = np.array([coef])
+            else:
+                current_grid[i] = su.generate_grid(*coef, self.n_refinement_splits)
         
         self.osm_ = {}
 
@@ -211,12 +218,15 @@ class SLEUTH(BaseEstimator):
             )
 
             new_param_grid = [None] * 5
-            for i in range(5):
-                c_min = top_params[:, i].min()
-                c_max = top_params[:, i].max()
-                new_param_grid[i] = su.get_new_range(
-                    current_grid[i], c_min, c_max, self.n_refinement_splits
-                )
+            for i, coef in enumerate(coefficient_ranges):
+                if isinstance(coef, int):
+                    new_param_grid[i] = np.array([coef])
+                else:
+                    c_min = top_params[:, i].min()
+                    c_max = top_params[:, i].max()
+                    new_param_grid[i] = su.get_new_range(
+                        current_grid[i], c_min, c_max, self.n_refinement_splits
+                    )
 
             #= Save results =#
             param_arr = np.array(list(self.osm_.keys()))
