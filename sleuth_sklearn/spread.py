@@ -1220,7 +1220,7 @@ def fill_montecarlo_grid_io(
     grid_MC /= n_iters
     
     out_dir = log_dir / f"{coef_diffusion}_{coef_breed}_{coef_spread}_{coef_slope}_{coef_road}"
-
+    out_dir.mkdir(exist_ok=True, parents=True)
     np.save(out_dir / f"records.npy", records)
 
     records_mean = records.mean(axis=0)

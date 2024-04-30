@@ -262,6 +262,13 @@ class SLEUTH(BaseEstimator):
         return self
 
     def predict(self, X, nyears):
+        if self.verbose > 0:
+            if self.log_dir is None:
+                raise IOError("verbose > 0 but log_dir wasn't set in constructor.")
+            else:
+                self.log_dir_path_ = Path(self.log_dir)
+                self.log_dir_path_.mkdir(exist_ok=True, parents=True)
+
         if self.random_state is not None:
             self.seed_sequence_prediction_ = np.random.SeedSequence(self.random_state - 1)
         else:
@@ -274,24 +281,45 @@ class SLEUTH(BaseEstimator):
         )
 
         # Perform simulation from start to end year
-        grid_MC, records_mean, records_std = sp.fill_montecarlo_grid(
-            X0=X,
-            nyears=nyears,
-            n_iters=self.n_iters,
-            grid_slope=self.grid_slope,
-            grid_excluded=self.grid_excluded,
-            grid_roads=self.grid_roads,
-            grid_roads_dist=self.grid_roads_dist,
-            grid_roads_i=self.grid_roads_i,
-            grid_roads_j=self.grid_roads_j,
-            coef_diffusion=self.coef_diffusion_,
-            coef_breed=self.coef_breed_,
-            coef_spread=self.coef_spread_,
-            coef_slope=self.coef_slope_,
-            coef_road=self.coef_road_,
-            crit_slope=self.crit_slope,
-            prngs=self.prngs_prediction_
-        )
+        if self.verbose <= 1:
+            grid_MC, records_mean, records_std = sp.fill_montecarlo_grid(
+                X0=X,
+                nyears=nyears,
+                n_iters=self.n_iters,
+                grid_slope=self.grid_slope,
+                grid_excluded=self.grid_excluded,
+                grid_roads=self.grid_roads,
+                grid_roads_dist=self.grid_roads_dist,
+                grid_roads_i=self.grid_roads_i,
+                grid_roads_j=self.grid_roads_j,
+                coef_diffusion=self.coef_diffusion_,
+                coef_breed=self.coef_breed_,
+                coef_spread=self.coef_spread_,
+                coef_slope=self.coef_slope_,
+                coef_road=self.coef_road_,
+                crit_slope=self.crit_slope,
+                prngs=self.prngs_prediction_
+            )
+        else:
+            grid_MC, records_mean, records_std = sp.fill_montecarlo_grid_io(
+                X0=X,
+                nyears=nyears,
+                n_iters=self.n_iters,
+                grid_slope=self.grid_slope,
+                grid_excluded=self.grid_excluded,
+                grid_roads=self.grid_roads,
+                grid_roads_dist=self.grid_roads_dist,
+                grid_roads_i=self.grid_roads_i,
+                grid_roads_j=self.grid_roads_j,
+                coef_diffusion=self.coef_diffusion_,
+                coef_breed=self.coef_breed_,
+                coef_spread=self.coef_spread_,
+                coef_slope=self.coef_slope_,
+                coef_road=self.coef_road_,
+                crit_slope=self.crit_slope,
+                prngs=self.prngs_prediction_,
+                log_dir=self.log_dir_path_
+            )
         return grid_MC, records_mean, records_std
 
 
